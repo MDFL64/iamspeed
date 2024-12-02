@@ -10,9 +10,6 @@ fn benchmark<T>(name: &str, mut f: impl FnMut() -> T)  {
 }
 
 pub mod day1 {
-    use core::simd::{num::SimdUint, u16x8, u8x16, u8x8};
-    use std::sync::Mutex;
-
     fn parse_int(bytes: &[u8]) -> i32 {
         let a = (bytes[0] - 0x30) as i32 * 10000;
         let b = (bytes[1] - 0x30) as i32 * 1000;
@@ -21,31 +18,6 @@ pub mod day1 {
         let e = (bytes[4] - 0x30) as i32;
         let canon = a + b + c + d + e;
         canon
-    }
-
-    // I could not for the life of me put together a good SIMD parsing routine.
-    // Maybe portable SIMD is undercooked. Maybe I am just dumb.
-    // Maybe enabling better target features would help, but it's not clear to me whether the test harness will even have those features enabled.
-    fn parse_chunk(bytes: &[u8]) -> (i32,i32) {
-        let mut array= [0u8;16];
-        array[0..14].copy_from_slice(bytes);
-
-        let text = u8x16::from_array(array);
-        let sub = u8x16::splat(0x30);
-        let digits = text - sub;
-
-        let src = digits.to_array();
-        let dst = [src[1],src[2],src[3],src[4],src[9],src[10],src[11],src[12]];
-
-        let shorts: u16x8 = u8x8::from_array(dst).cast();
-
-        let mul1 = u16x8::from_array([1000,100,10,1,0,0,0,0]);
-        let mul2 = u16x8::from_array([0,0,0,0,1000,100,10,1]);
-
-        let sum1 = (mul1 * shorts).reduce_sum() as i32 + digits.to_array()[0] as i32 * 10000;
-        let sum2 = (mul2 * shorts).reduce_sum() as i32 + digits.to_array()[8] as i32 * 10000;
-
-        (sum1,sum2)
     }
 
     struct Common {
@@ -75,8 +47,6 @@ pub mod day1 {
             // faster than std by up to 50%
             radsort::sort(&mut saved.output_first);
             radsort::sort(&mut saved.output_second);
-            //saved.output_first.sort();
-            //saved.output_second.sort();
         });
 
         saved
@@ -112,5 +82,198 @@ pub mod day1 {
         }
 
         sum
+    }
+}
+
+pub mod day2 {
+    //use core::cmp::Ord;
+
+    use core::{iter::Iterator, simd::prelude::*, u64};
+
+    pub fn part1(input: &str) -> i32 {
+        unsafe { impl1(input) }
+    }
+
+    pub fn part2(input: &str) -> i32 {
+        unsafe { impl2(input) }
+    }
+
+    fn check_line(line: &str) -> bool {
+        let mut iter = line.split(' ').map(|x| x.parse::<i32>().unwrap());
+        let mut last = iter.next().unwrap();
+
+        let n = iter.next().unwrap();
+
+        if (n-last).abs() > 3 {
+            return false;
+        }
+
+        if n > last {
+            // up
+            last = n;
+            for n in iter {
+                let delta = n - last;
+                if delta < 1 || delta > 3 {
+                    return false;
+                }
+                last = n;
+            }
+        } else if n < last {
+            // down
+            last = n;
+            for n in iter {
+                let delta = last - n;
+                if delta < 1 || delta > 3 {
+                    return false;
+                }
+                last = n;
+            }
+        } else {
+            return false;
+        }
+
+        true
+    }
+
+    fn check_array(array: &[i8;8]) -> bool {
+        let mut iter = array.iter().copied().filter(|x| *x != 0);
+        let mut last = iter.next().unwrap();
+
+        let n = iter.next().unwrap();
+
+        if (n-last).abs() > 3 {
+            return false;
+        }
+
+        if n > last {
+            // up
+            last = n;
+            for n in iter {
+                let delta = n - last;
+                if delta < 1 || delta > 3 {
+                    return false;
+                }
+                last = n;
+            }
+        } else if n < last {
+            // down
+            last = n;
+            for n in iter {
+                let delta = last - n;
+                if delta < 1 || delta > 3 {
+                    return false;
+                }
+                last = n;
+            }
+        } else {
+            return false;
+        }
+
+        true
+    }
+
+    fn midwit_parse(input: &str) -> ([u8;8],usize) {
+        let bytes = input.as_bytes();
+        let mut i = 0;
+        let mut j = 0;
+        let mut n = 0;
+        let mut result = [0u8;8];
+
+        loop {
+            let byte = bytes[i];
+            match byte {
+                b'0'..=b'9' => {
+                    n = n * 10 + (byte - b'0');
+                }
+                b' ' => {
+                    result[j] = n;
+                    n = 0;
+                    j += 1;
+                }
+                b'\n' => {
+                    result[j] = n;
+                    break;
+                }
+                _ => panic!("char {}",byte as char)
+            }
+            i += 1;
+        }
+
+        (result,i)
+    }
+
+    #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
+    unsafe fn fast_parse(input: &str) -> ([u8;8],usize) {
+        {
+            let newline = u8x32::splat(b'\n');
+
+            let text = if input.len() >= 32 {
+                u8x32::from_slice(input.as_bytes())
+            } else {
+                u8x32::load_or(input.as_bytes(), newline)
+            };
+
+            let space = u8x32::splat(b' ');
+            let ascii_zero = u8x32::splat(b'0');
+            let zero = u8x32::splat(0);
+            let ten = u8x32::splat(10);
+
+            // zero out invalid elements from the next line
+            let len = text.simd_eq(newline).first_set().unwrap();
+            let valid = Mask::from_bitmask(!(u64::MAX << len));
+            let text = valid.select(text,zero);
+
+            // find end of each number
+            let spaces = text.simd_eq(space);
+            let mut one_places = Mask::from_bitmask(spaces.to_bitmask() >> 1);
+            one_places.set(len-1, true);
+            let ten_places = Mask::from_bitmask(one_places.to_bitmask() >> 1) & !spaces;
+
+            // produce parsed bytes
+            let digits = text - ascii_zero;
+            let tens = ten_places.select(digits * ten, zero);
+            let ones = one_places.select(digits, zero);
+
+            // remove gaps
+            let gappy = (tens.rotate_elements_right::<1>() + ones).to_array();
+            let mut i = 0;
+            let mut result = [0u8;8];
+
+            for x in gappy {
+                if x != 0 {
+                    result[i] = x;
+                    i += 1;
+                }
+            }
+
+            (result, len)
+        }
+    }
+
+    #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
+    unsafe fn impl1(mut input: &str) -> i32 {
+
+        let mut count = 0;
+
+        while input.len() > 0 {
+            let (nums,len) = fast_parse(input);
+            if check_array(&std::mem::transmute(nums)) {
+                count += 1;
+            }
+            input = &input[len+1..];
+        }
+
+        /*for line in input.lines() {
+            if check_line(line) {
+                count += 1;
+            }
+        }*/
+
+        count
+    }
+
+    #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
+    unsafe fn impl2(input: &str) -> i32 {
+        1
     }
 }
