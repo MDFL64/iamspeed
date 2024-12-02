@@ -48,33 +48,16 @@ pub mod day1 {
         (sum1,sum2)
     }
 
-    struct CommonSaved {
-        input: String,
+    struct Common {
         output_first: Vec<i32>,
         output_second: Vec<i32>
     }
 
-    const USE_SAVE: bool = true;
-
-    // fast path which involves saving results from part 1
-    static COMMON_SAVED: Mutex<CommonSaved> = Mutex::new(CommonSaved {
-        input: String::new(),
-        output_first: vec!(),
-        output_second: vec!()
-    });
-
-    fn common(input: &str, saved: &mut CommonSaved) {
-        if USE_SAVE {
-            if saved.input == input {
-                return;
-            }
-            saved.input = input.to_owned();
-        }
-
-        crate::benchmark("alloc",|| {
-            saved.output_first = Vec::with_capacity(1000);
-            saved.output_second = Vec::with_capacity(1000);
-        });
+    fn common(input: &str) -> Common {
+        let mut saved = Common {
+            output_first: Vec::with_capacity(1000),
+            output_second: Vec::with_capacity(1000)
+        };
 
         crate::benchmark("parse",|| {
             for row in input.bytes().array_chunks::<14>() {
@@ -95,14 +78,12 @@ pub mod day1 {
             //saved.output_first.sort();
             //saved.output_second.sort();
         });
+
+        saved
     }
 
     pub fn part1(input: &str) -> i32 {
-        let mut saved = COMMON_SAVED.lock().unwrap();
-        // reset saved (no cheating)
-        // saved.input.clear();
-
-        common(input, &mut saved);
+        let saved = common(input);
 
         let mut sum = 0;
         for (a, b) in saved.output_first.iter().zip(saved.output_second.iter()) {
@@ -113,8 +94,7 @@ pub mod day1 {
     }
 
     pub fn part2(input: &str) -> i32 {
-        let mut saved = COMMON_SAVED.lock().unwrap();
-        common(input, &mut saved);
+        let saved = common(input);
 
         let mut sum = 0;
         let mut index = 0;
