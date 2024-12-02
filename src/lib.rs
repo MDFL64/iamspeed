@@ -54,7 +54,7 @@ pub mod day1 {
         output_second: Vec<i32>
     }
 
-    const USE_SAVE: bool = false;
+    const USE_SAVE: bool = true;
 
     // fast path which involves saving results from part 1
     static COMMON_SAVED: Mutex<CommonSaved> = Mutex::new(CommonSaved {
@@ -89,9 +89,11 @@ pub mod day1 {
 
         // sort
         crate::benchmark("sort",|| {
-            // faster than std by ~10%
+            // faster than std by up to 50%
             radsort::sort(&mut saved.output_first);
             radsort::sort(&mut saved.output_second);
+            //saved.output_first.sort();
+            //saved.output_second.sort();
         });
     }
 
