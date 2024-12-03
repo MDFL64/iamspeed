@@ -1,7 +1,7 @@
 #![feature(portable_simd)]
 #![feature(iter_array_chunks)]
 
-use std::time::Instant;
+use std::{collections::HashMap, sync::Mutex, time::Instant};
 
 fn benchmark<T>(name: &str, mut f: impl FnMut() -> T)  {
     //let t = Instant::now();
@@ -136,7 +136,7 @@ pub mod day2 {
     }
 
     fn check_array(array: &[i8;8]) -> bool {
-        let mut iter = array.iter().copied().filter(|x| *x != 0);
+        let mut iter = array.iter().copied().filter(|x| *x != -1);
         let mut last = iter.next().unwrap();
 
         let n = iter.next().unwrap();
@@ -172,15 +172,29 @@ pub mod day2 {
         true
     }
 
-    fn midwit_parse(input: &str) -> ([u8;8],usize) {
-        let bytes = input.as_bytes();
+    #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
+    unsafe fn check_fast(array: &[i8;8]) -> bool {
+        let numbers = i8x8::from_array(*array);
+        let numbers_shifted = numbers.rotate_elements_left::<1>();
+
+        let count = numbers.simd_ne(i8x8::splat(-1)).to_bitmask().trailing_ones();
+
+        let deltas = numbers_shifted - numbers;
+
+        let asc_okay = (deltas.simd_le(i8x8::splat(3)) & deltas.simd_gt(i8x8::splat(0))).to_bitmask().trailing_ones();
+        let desc_okay = (deltas.simd_ge(i8x8::splat(-3)) & deltas.simd_lt(i8x8::splat(0))).to_bitmask().trailing_ones();
+
+        (asc_okay >= count-1) | (desc_okay >= count-1)
+    }
+
+    fn midwit_parse(input: &[u8]) -> ([u8;8],usize) {
         let mut i = 0;
         let mut j = 0;
         let mut n = 0;
-        let mut result = [0u8;8];
+        let mut result = [255;8];
 
         loop {
-            let byte = bytes[i];
+            let byte = input[i];
             match byte {
                 b'0'..=b'9' => {
                     n = n * 10 + (byte - b'0');
@@ -202,7 +216,7 @@ pub mod day2 {
         (result,i)
     }
 
-    #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
+    /*#[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
     unsafe fn fast_parse(input: &str) -> ([u8;8],usize) {
         {
             let newline = u8x32::splat(b'\n');
@@ -220,14 +234,16 @@ pub mod day2 {
 
             // zero out invalid elements from the next line
             let len = text.simd_eq(newline).first_set().unwrap();
-            let valid = Mask::from_bitmask(!(u64::MAX << len));
-            let text = valid.select(text,zero);
+            //let valid = Mask::from_bitmask(!(u64::MAX << len));
+            //let text = valid.select(text,zero);
+            let valid = core::arch::x86_64::_mm256_shift
+            let text = core::arch::x86_64::_mm256_blendv_epi8(text.into(),zero.into(),valid);
 
             // find end of each number
             let spaces = text.simd_eq(space);
             let mut one_places = Mask::from_bitmask(spaces.to_bitmask() >> 1);
             one_places.set(len-1, true);
-            let ten_places = Mask::from_bitmask(one_places.to_bitmask() >> 1) & !spaces;
+            let ten_places = Mask::from_bitmask((one_places.to_bitmask() >> 1) & !spaces.to_bitmask());
 
             // produce parsed bytes
             let digits = text - ascii_zero;
@@ -248,19 +264,24 @@ pub mod day2 {
 
             (result, len)
         }
-    }
+    }*/
 
     #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
-    unsafe fn impl1(mut input: &str) -> i32 {
+    unsafe fn impl1(input: &str) -> i32 {
+        //let mut lines = input.lines();
+
+        let mut bytes = input.as_bytes();
 
         let mut count = 0;
 
-        while input.len() > 0 {
-            let (nums,len) = fast_parse(input);
-            if check_array(&std::mem::transmute(nums)) {
+        while bytes.len() > 0 {
+            let (nums,len) = midwit_parse(bytes);
+            let okay = check_fast(&std::mem::transmute(nums));
+
+            if okay {
                 count += 1;
             }
-            input = &input[len+1..];
+            bytes = &bytes[len+1..];
         }
 
         /*for line in input.lines() {
