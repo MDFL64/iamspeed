@@ -271,38 +271,40 @@ pub mod day2 {
     }
 
     #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
+    unsafe fn fast_skip(input: &[u8]) -> usize {
+        let newline = u8x32::splat(b'\n');
+
+        let text = if input.len() >= 32 {
+            u8x32::from_slice(input)
+        } else {
+            return midwit_parse(input).1;
+        };
+
+        let len = text.simd_eq(newline).first_set().unwrap();
+        len
+    }
+
+    #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
     unsafe fn impl1(input: &str) -> i32 {
-        //let mut lines = input.lines();
-
-        let mut buffer = Vec::with_capacity(10_000);
-
         let mut bytes = input.as_bytes();
 
-        crate::benchmark("parse", ||{
-            while bytes.len() > 0 {
-                let (nums,len) = fast_parse(bytes);
-                buffer.push(nums);
-                bytes = &bytes[len+1..];
-            }
-        });
-        
-        let count = crate::benchmark("finish", ||{
-            let mut count = 0;
+        let mut line_count = 0;
 
-            for nums in buffer {
-                let okay = check_fast(&std::mem::transmute(nums));
-        
-                if okay {
-                    count += 1;
-                }
-                println!("-> {}",okay)
+        while bytes.len() > 0 {
+            let (nums,len) = fast_parse(bytes);
+            
+            let okay = check_fast(&std::mem::transmute(nums));
+    
+            if okay {
+                // once one is good, assume all others are good too
+                return 1000 - line_count;
             }
 
-            panic!();
-            count
-        });
+            line_count += 1;
 
-        count
+            bytes = &bytes[len+1..];
+        }
+        0
     }
 
     #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
