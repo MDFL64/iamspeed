@@ -90,7 +90,7 @@ pub mod day1 {
 pub mod day2 {
     //use core::cmp::Ord;
 
-    use core::{iter::Iterator, simd::prelude::*, u64};
+    use core::{iter::Iterator, simd::prelude::*};
 
     pub fn part1(input: &str) -> i32 {
         unsafe { impl1(input) }
@@ -174,19 +174,27 @@ pub mod day2 {
         true
     }
 
-    #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
-    unsafe fn check_fast<const FIND_DIR: bool>(array: &[i8;8]) -> (bool,u32,u32) {
+    fn check_fast<const FIND_DIR: bool>(array: &[i8;8]) -> (bool,u32) {
         let numbers = i8x8::from_array(*array);
         let numbers_shifted = numbers.rotate_elements_left::<1>();
 
-        let count = numbers.simd_ne(i8x8::splat(-128)).to_bitmask().trailing_ones();
+        let mut numbers_mask = numbers.simd_ne(i8x8::splat(-128));
+        let count = numbers_mask.to_bitmask().trailing_ones();
 
         let deltas = numbers_shifted - numbers;
 
         let asc_okay = (deltas.simd_le(i8x8::splat(3)) & deltas.simd_gt(i8x8::splat(0))).to_bitmask().trailing_ones();
         let desc_okay = (deltas.simd_ge(i8x8::splat(-3)) & deltas.simd_lt(i8x8::splat(0))).to_bitmask().trailing_ones();
 
-        ((asc_okay == count-1) | (desc_okay == count-1), asc_okay, desc_okay)
+        if FIND_DIR {
+            numbers_mask.set(count as usize - 1, false);
+            let real_deltas = numbers_mask.select(deltas,i8x8::splat(0));
+            let delta_sum = real_deltas.cast::<i16>().reduce_sum();
+
+            ((asc_okay == count-1) | (desc_okay == count-1), if delta_sum > 0 { asc_okay } else { desc_okay })
+        } else {
+            ((asc_okay == count-1) | (desc_okay == count-1), 0)
+        }
     }
 
     fn midwit_parse(input: &[u8]) -> ([u8;8],usize) {
@@ -218,8 +226,7 @@ pub mod day2 {
         (result,i)
     }
 
-    #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
-    unsafe fn fast_parse(input: &[u8]) -> ([u8;8],usize) {
+    fn fast_parse(input: &[u8]) -> ([u8;8],usize) {
         {
             let newline = u8x32::splat(b'\n');
 
@@ -279,7 +286,7 @@ pub mod day2 {
         while bytes.len() > 0 {
             let (nums,len) = fast_parse(bytes);
             
-            let (okay,_,_) = check_fast(&std::mem::transmute(nums));
+            let (okay,_) = check_fast::<false>(&std::mem::transmute(nums));
     
             if okay {
                 // once one is good, assume all others are good too
@@ -305,48 +312,33 @@ pub mod day2 {
     unsafe fn impl2(input: &str) -> i32 {
         let mut bytes = input.as_bytes();
         let mut count = 0;
-        let mut counts = [0,0,0,0];
+        let mut line_count = 0;
 
         while bytes.len() > 0 {
             let (nums,len) = fast_parse(bytes);
             
-            let (okay,fail1,fail2) = check_fast(&std::mem::transmute(nums));
+            let (okay,fail) = check_fast::<true>(&std::mem::transmute(nums));
     
             if okay {
-                count += 1;
+                // once one is good, assume all others are good too
+                return 1000 - line_count + count;
             } else {
-                let a1 = slice_entry(nums,fail1 as usize);
-                let a2 = slice_entry(nums,fail2 as usize);
-                let a3 = slice_entry(nums,fail1 as usize + 1);
-                let a4 = slice_entry(nums,fail2 as usize + 1);
+                // no significant perf impact of moving these behind branches
+                let sliced1 = slice_entry(nums,fail as usize);
+                let sliced2 = slice_entry(nums,fail as usize + 1);
 
-                let (okay1,_,_) = check_fast(&std::mem::transmute(a1));
-                let (okay2,_,_) = check_fast(&std::mem::transmute(a2));
-                let (okay3,_,_) = check_fast(&std::mem::transmute(a3));
-                let (okay4,_,_) = check_fast(&std::mem::transmute(a4));
-
-                if okay1 {
-                    counts[0] += 1;
-                }
-                if okay2 {
-                    counts[1] += 1;
-                }
-                if okay3 {
-                    counts[2] += 1;
-                }
-                if okay4 {
-                    counts[3] += 1;
-                }
-
-                if okay1 || okay2 || okay3 || okay4 {
+                let (okay1,_) = check_fast::<false>(&std::mem::transmute(sliced1));
+                let (okay2,_) = check_fast::<false>(&std::mem::transmute(sliced2));
+                
+                if okay1 | okay2 {
                     count += 1;
                 }
             }
+            line_count += 1;
 
             bytes = &bytes[len+1..];
         }
 
-        println!("? {:?}",counts);
         count
     }
 }
