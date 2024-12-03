@@ -1,12 +1,14 @@
 #![feature(portable_simd)]
 #![feature(iter_array_chunks)]
 
+use core::ops::FnOnce;
 use std::{collections::HashMap, sync::Mutex, time::Instant};
 
-fn benchmark<T>(name: &str, mut f: impl FnMut() -> T)  {
+fn benchmark<T>(name: &str, f: impl FnOnce() -> T) -> T  {
     //let t = Instant::now();
-    f();
+    let res = f();
     //println!("bench {name}: {:?}",t.elapsed());
+    res
 }
 
 pub mod day1 {
@@ -216,79 +218,89 @@ pub mod day2 {
         (result,i)
     }
 
-    /*#[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
-    unsafe fn fast_parse(input: &str) -> ([u8;8],usize) {
+    #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
+    unsafe fn fast_parse(input: &[u8]) -> ([u8;8],usize) {
         {
             let newline = u8x32::splat(b'\n');
 
             let text = if input.len() >= 32 {
-                u8x32::from_slice(input.as_bytes())
+                u8x32::from_slice(input)
             } else {
-                u8x32::load_or(input.as_bytes(), newline)
+                return midwit_parse(input);
             };
 
-            let space = u8x32::splat(b' ');
-            let ascii_zero = u8x32::splat(b'0');
-            let zero = u8x32::splat(0);
-            let ten = u8x32::splat(10);
-
-            // zero out invalid elements from the next line
             let len = text.simd_eq(newline).first_set().unwrap();
-            //let valid = Mask::from_bitmask(!(u64::MAX << len));
-            //let text = valid.select(text,zero);
-            let valid = core::arch::x86_64::_mm256_shift
-            let text = core::arch::x86_64::_mm256_blendv_epi8(text.into(),zero.into(),valid);
 
-            // find end of each number
-            let spaces = text.simd_eq(space);
-            let mut one_places = Mask::from_bitmask(spaces.to_bitmask() >> 1);
-            one_places.set(len-1, true);
-            let ten_places = Mask::from_bitmask((one_places.to_bitmask() >> 1) & !spaces.to_bitmask());
-
-            // produce parsed bytes
-            let digits = text - ascii_zero;
-            let tens = ten_places.select(digits * ten, zero);
-            let ones = one_places.select(digits, zero);
-
-            // remove gaps
-            let gappy = (tens.rotate_elements_right::<1>() + ones).to_array();
-            let mut i = 0;
-            let mut result = [0u8;8];
-
-            for x in gappy {
-                if x != 0 {
-                    result[i] = x;
-                    i += 1;
+            let (mask_spaces,mask_final) = match len {
+                // having more than 3 fast cases is slower
+                /*14 => {
+                    // 5x two-digits
+                    (0b100100100100,Mask::from_array([true,true,true,true,true,false,false,false]))
+                }*/
+                17 => {
+                    // 6x two-digits
+                    (0b100100100100100,Mask::from_array([true,true,true,true,true,true,false,false]))
                 }
+                20 => {
+                    // 7x two-digits
+                    (0b100100100100100100,Mask::from_array([true,true,true,true,true,true,true,false]))
+                }
+                23 => {
+                    // 8x two-digits
+                    (0b100100100100100100100,Mask::from_array([true,true,true,true,true,true,true,true]))
+                }
+                _ => {
+                    return midwit_parse(input);
+                }
+            };
+
+            let spaces = text.simd_eq(u8x32::splat(b' ')).to_bitmask();
+            if (spaces & mask_spaces) != mask_spaces {
+                return midwit_parse(input);
             }
 
-            (result, len)
+            let digits = text - u8x32::splat(b'0');
+            
+            let res = simd_swizzle!(digits,[0,3,6,9,12,15,18,21]) * u8x8::splat(10);
+            let res = res + simd_swizzle!(digits,[1,4,7,10,13,16,19,22]);
+
+            let res = mask_final.select(res,u8x8::splat(255));
+
+            (res.to_array(),len)
         }
-    }*/
+    }
 
     #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
     unsafe fn impl1(input: &str) -> i32 {
         //let mut lines = input.lines();
 
+        let mut buffer = Vec::with_capacity(10_000);
+
         let mut bytes = input.as_bytes();
 
-        let mut count = 0;
-
-        while bytes.len() > 0 {
-            let (nums,len) = midwit_parse(bytes);
-            let okay = check_fast(&std::mem::transmute(nums));
-
-            if okay {
-                count += 1;
+        crate::benchmark("parse", ||{
+            while bytes.len() > 0 {
+                let (nums,len) = fast_parse(bytes);
+                buffer.push(nums);
+                bytes = &bytes[len+1..];
             }
-            bytes = &bytes[len+1..];
-        }
+        });
+        
+        let count = crate::benchmark("finish", ||{
+            let mut count = 0;
 
-        /*for line in input.lines() {
-            if check_line(line) {
-                count += 1;
+            for nums in buffer {
+                let okay = check_fast(&std::mem::transmute(nums));
+        
+                if okay {
+                    count += 1;
+                }
+                println!("-> {}",okay)
             }
-        }*/
+
+            panic!();
+            count
+        });
 
         count
     }
