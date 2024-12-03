@@ -174,7 +174,7 @@ pub mod day2 {
         true
     }
 
-    fn check_fast<const FIND_DIR: bool>(array: &[i8;8]) -> (bool,u32) {
+    fn check_fast(array: &[i8;8]) -> (bool,u32) {
         let numbers = i8x8::from_array(*array);
         let numbers_shifted = numbers.rotate_elements_left::<1>();
 
@@ -186,15 +186,17 @@ pub mod day2 {
         let asc_okay = (deltas.simd_le(i8x8::splat(3)) & deltas.simd_gt(i8x8::splat(0))).to_bitmask().trailing_ones();
         let desc_okay = (deltas.simd_ge(i8x8::splat(-3)) & deltas.simd_lt(i8x8::splat(0))).to_bitmask().trailing_ones();
 
-        if FIND_DIR {
+        {
             numbers_mask.set(count as usize - 1, false);
             let real_deltas = numbers_mask.select(deltas,i8x8::splat(0));
             let delta_sum = real_deltas.cast::<i16>().reduce_sum();
 
             ((asc_okay == count-1) | (desc_okay == count-1), if delta_sum > 0 { asc_okay } else { desc_okay })
-        } else {
-            ((asc_okay == count-1) | (desc_okay == count-1), 0)
         }
+        // disabling direction calculation (even via monomorphization) does not have a big impact
+        /* else {
+            ((asc_okay == count-1) | (desc_okay == count-1), 0)
+        }*/
     }
 
     fn midwit_parse(input: &[u8]) -> ([u8;8],usize) {
@@ -286,7 +288,7 @@ pub mod day2 {
         while bytes.len() > 0 {
             let (nums,len) = fast_parse(bytes);
             
-            let (okay,_) = check_fast::<false>(&std::mem::transmute(nums));
+            let (okay,_) = check_fast(&std::mem::transmute(nums));
     
             if okay {
                 // once one is good, assume all others are good too
@@ -317,7 +319,7 @@ pub mod day2 {
         while bytes.len() > 0 {
             let (nums,len) = fast_parse(bytes);
             
-            let (okay,fail) = check_fast::<true>(&std::mem::transmute(nums));
+            let (okay,fail) = check_fast(&std::mem::transmute(nums));
     
             if okay {
                 // once one is good, assume all others are good too
@@ -327,8 +329,8 @@ pub mod day2 {
                 let sliced1 = slice_entry(nums,fail as usize);
                 let sliced2 = slice_entry(nums,fail as usize + 1);
 
-                let (okay1,_) = check_fast::<false>(&std::mem::transmute(sliced1));
-                let (okay2,_) = check_fast::<false>(&std::mem::transmute(sliced2));
+                let (okay1,_) = check_fast(&std::mem::transmute(sliced1));
+                let (okay2,_) = check_fast(&std::mem::transmute(sliced2));
                 
                 if okay1 | okay2 {
                     count += 1;
