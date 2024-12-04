@@ -2,7 +2,7 @@
 #![feature(iter_array_chunks)]
 
 use core::ops::FnOnce;
-use std::{collections::HashMap, sync::Mutex, time::Instant};
+use std::time::Instant;
 
 fn benchmark<T>(name: &str, f: impl FnOnce() -> T) -> T  {
     let t = Instant::now();
@@ -280,7 +280,7 @@ pub mod day3 {
         unsafe { impl2(input) }
     }
 
-    #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
+    #[inline(always)]
     unsafe fn parse(bytes: &[u8]) -> Option<i64> {
         'fast:
         {
@@ -292,7 +292,7 @@ pub mod day3 {
                 let zero = u8x8::splat(0);
                 let digits = vector - u8x8::splat(b'0');
                 // 3x3 accounts for the vast majority of cases, with a fair number of 3x2 and 2x3's
-                // other cases account for less than 1%
+                // other cases account for around 1% each
                 let digits: u16x8 = match (digit_mask,punt_mask) {
                     (0b1110111,0b10001000) => {                        
                         simd_swizzle!(digits,zero,[0,1,2,4,5,6,10,10]).cast()
@@ -354,6 +354,7 @@ pub mod day3 {
         Some(n1*n2)
     }
 
+    #[inline(always)]
     unsafe fn scan4(haystack: &[u8], needle_bytes: [u8;4]) -> Option<usize> {
         const STRIDE: usize = 32;
 
@@ -389,6 +390,7 @@ pub mod day3 {
         None
     }
 
+    #[inline(always)]
     unsafe fn scan4x2(haystack: &[u8], needle_bytes_1: [u8;4], needle_bytes_2: [u8;4]) -> (Option<usize>,Option<usize>) {
         const STRIDE: usize = 32;
 
