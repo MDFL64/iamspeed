@@ -5,9 +5,9 @@ use core::ops::FnOnce;
 use std::{collections::HashMap, sync::Mutex, time::Instant};
 
 fn benchmark<T>(name: &str, f: impl FnOnce() -> T) -> T  {
-    //let t = Instant::now();
+    let t = Instant::now();
     let res = f();
-    //println!("bench {name}: {:?}",t.elapsed());
+    println!("bench {name}: {:?}",t.elapsed());
     res
 }
 
@@ -88,9 +88,7 @@ pub mod day1 {
 }
 
 pub mod day2 {
-    //use core::cmp::Ord;
-
-    use core::{iter::Iterator, simd::prelude::*};
+    use core::simd::prelude::*;
 
     pub fn part1(input: &str) -> i32 {
         unsafe { impl1(input) }
@@ -98,80 +96,6 @@ pub mod day2 {
 
     pub fn part2(input: &str) -> i32 {
         unsafe { impl2(input) }
-    }
-
-    fn check_line(line: &str) -> bool {
-        let mut iter = line.split(' ').map(|x| x.parse::<i32>().unwrap());
-        let mut last = iter.next().unwrap();
-
-        let n = iter.next().unwrap();
-
-        if (n-last).abs() > 3 {
-            return false;
-        }
-
-        if n > last {
-            // up
-            last = n;
-            for n in iter {
-                let delta = n - last;
-                if delta < 1 || delta > 3 {
-                    return false;
-                }
-                last = n;
-            }
-        } else if n < last {
-            // down
-            last = n;
-            for n in iter {
-                let delta = last - n;
-                if delta < 1 || delta > 3 {
-                    return false;
-                }
-                last = n;
-            }
-        } else {
-            return false;
-        }
-
-        true
-    }
-
-    fn check_array(array: &[i8;8]) -> bool {
-        let mut iter = array.iter().copied().filter(|x| *x != -1);
-        let mut last = iter.next().unwrap();
-
-        let n = iter.next().unwrap();
-
-        if (n-last).abs() > 3 {
-            return false;
-        }
-
-        if n > last {
-            // up
-            last = n;
-            for n in iter {
-                let delta = n - last;
-                if delta < 1 || delta > 3 {
-                    return false;
-                }
-                last = n;
-            }
-        } else if n < last {
-            // down
-            last = n;
-            for n in iter {
-                let delta = last - n;
-                if delta < 1 || delta > 3 {
-                    return false;
-                }
-                last = n;
-            }
-        } else {
-            return false;
-        }
-
-        true
     }
 
     fn check_fast(array: &[i8;8]) -> (bool,u32) {
@@ -342,5 +266,237 @@ pub mod day2 {
         }
 
         count
+    }
+}
+
+pub mod day3 {
+    use core::{cmp::Ord, iter::Iterator, simd::prelude::*};
+
+    pub fn part1(input: &str) -> i64 {
+        unsafe { impl1(input) }
+    }
+
+    pub fn part2(input: &str) -> i64 {
+        unsafe { impl2(input) }
+    }
+
+    #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
+    unsafe fn parse(bytes: &[u8]) -> Option<i64> {
+        'fast:
+        {
+            if bytes.len() >= 8 {
+                let vector = u8x8::from_slice(bytes);
+                let digit_mask = (vector.simd_ge(u8x8::splat(b'0')) & vector.simd_le(u8x8::splat(b'9'))).to_bitmask();
+                let punt_mask = vector.simd_eq(u8x8::from_array(*b"__,,__))")).to_bitmask();
+    
+                let zero = u8x8::splat(0);
+                let digits = vector - u8x8::splat(b'0');
+                // 3x3 accounts for the vast majority of cases, with a fair number of 3x2 and 2x3's
+                // other cases account for less than 1%
+                let digits: u16x8 = match (digit_mask,punt_mask) {
+                    (0b1110111,0b10001000) => {                        
+                        simd_swizzle!(digits,zero,[0,1,2,4,5,6,10,10]).cast()
+                    }
+                    (0b111011,0b1000100) => {
+                        simd_swizzle!(digits,zero,[10,0,1,3,4,5,10,10]).cast()
+                    }
+                    (0b110111,0b1001000) => {
+                        simd_swizzle!(digits,zero,[0,1,2,10,4,5,10,10]).cast()
+                    }
+                    _ => break 'fast
+                };
+    
+                let dm = digits * u16x8::from_array([100,10,1,100,10,1,0,0]);
+
+                let dm = dm.as_array();
+                let a = dm[0] + dm[1] + dm[2];
+                let b = dm[3] + dm[4] + dm[5];
+                return Some(a as i64 * b as i64);
+            }
+        }
+
+        let mut iter = bytes.iter();
+
+        let mut digit_count = 0;
+        let mut n1 = 0;
+        while let Some(d) = iter.next() {
+            match d {
+                b'0'..=b'9' => {
+                    n1 = n1 * 10 + (d - b'0') as i64;
+                    digit_count += 1;
+                }
+                b',' => break,
+                _ => return None
+            }
+        }
+
+        if digit_count == 0 {
+            return None;
+        }
+
+        let mut digit_count = 0;
+        let mut n2 = 0;
+        while let Some(d) = iter.next() {
+            match d {
+                b'0'..=b'9' => {
+                    n2 = n2 * 10 + (d - b'0') as i64;
+                    digit_count += 1;
+                }
+                b')' => break,
+                _ => return None
+            }
+        }
+
+        if digit_count == 0 {
+            return None;
+        }
+
+        Some(n1*n2)
+    }
+
+    unsafe fn scan4(haystack: &[u8], needle_bytes: [u8;4]) -> Option<usize> {
+        const STRIDE: usize = 32;
+
+        let needle = i32x8::splat(i32::from_le_bytes(needle_bytes));
+
+        for offset in (0..).step_by(STRIDE) {
+            let chunk0 = &haystack[offset..];
+            // not enough bytes, slow path
+            if chunk0.len() < STRIDE+3 {
+                for (i,window) in chunk0.windows(4).enumerate() {
+                    if window == needle_bytes {
+                        return Some(offset + i + 4);
+                    }
+                }
+                return None;
+            }
+            let vector0: i32x8 = std::mem::transmute( u8x32::from_slice(chunk0) );
+            let vector1: i32x8 = std::mem::transmute( u8x32::from_slice(&haystack[offset+1..]) );
+            let vector2: i32x8 = std::mem::transmute( u8x32::from_slice(&haystack[offset+2..]) );
+            let vector3: i32x8 = std::mem::transmute( u8x32::from_slice(&haystack[offset+3..]) );
+    
+            let offset0 = needle.simd_eq(vector0).to_bitmask().trailing_zeros()*4;
+            let offset1 = needle.simd_eq(vector1).to_bitmask().trailing_zeros()*4+1;
+            let offset2 = needle.simd_eq(vector2).to_bitmask().trailing_zeros()*4+2;
+            let offset3 = needle.simd_eq(vector3).to_bitmask().trailing_zeros()*4+3;
+    
+            let index = offset0.min(offset1).min(offset2.min(offset3)) as usize;
+            
+            if index < 256 {
+                return Some(offset + index + 4);
+            }
+        }
+        None
+    }
+
+    unsafe fn scan4x2(haystack: &[u8], needle_bytes_1: [u8;4], needle_bytes_2: [u8;4]) -> (Option<usize>,Option<usize>) {
+        const STRIDE: usize = 32;
+
+        let needle1 = i32x8::splat(i32::from_le_bytes(needle_bytes_1));
+        let needle2 = i32x8::splat(i32::from_le_bytes(needle_bytes_2));
+
+        for offset in (0..).step_by(STRIDE) {
+            let chunk0 = &haystack[offset..];
+            // not enough bytes, slow path
+            if chunk0.len() < STRIDE+3 {
+                let mut ret1 = None;
+                let mut ret2 = None;
+
+                for (i,window) in chunk0.windows(4).enumerate() {
+                    if window == needle_bytes_1 {
+                        ret1 = Some(offset + i + 4);
+                        break;
+                    }
+                }
+
+                for (i,window) in chunk0.windows(4).enumerate() {
+                    if window == needle_bytes_2 {
+                        ret2 = Some(offset + i + 4);
+                        break;
+                    }
+                }
+
+                return (ret1,ret2);
+            }
+            let vector0: i32x8 = std::mem::transmute( u8x32::from_slice(chunk0) );
+            let vector1: i32x8 = std::mem::transmute( u8x32::from_slice(&haystack[offset+1..]) );
+            let vector2: i32x8 = std::mem::transmute( u8x32::from_slice(&haystack[offset+2..]) );
+            let vector3: i32x8 = std::mem::transmute( u8x32::from_slice(&haystack[offset+3..]) );
+    
+            let n1_offset0 = needle1.simd_eq(vector0).to_bitmask().trailing_zeros()*4;
+            let n1_offset1 = needle1.simd_eq(vector1).to_bitmask().trailing_zeros()*4+1;
+            let n1_offset2 = needle1.simd_eq(vector2).to_bitmask().trailing_zeros()*4+2;
+            let n1_offset3 = needle1.simd_eq(vector3).to_bitmask().trailing_zeros()*4+3;
+
+            let n2_offset0 = needle2.simd_eq(vector0).to_bitmask().trailing_zeros()*4;
+            let n2_offset1 = needle2.simd_eq(vector1).to_bitmask().trailing_zeros()*4+1;
+            let n2_offset2 = needle2.simd_eq(vector2).to_bitmask().trailing_zeros()*4+2;
+            let n2_offset3 = needle2.simd_eq(vector3).to_bitmask().trailing_zeros()*4+3;
+    
+            let index_1 = n1_offset0.min(n1_offset1).min(n1_offset2.min(n1_offset3)) as usize;
+            let index_2 = n2_offset0.min(n2_offset1).min(n2_offset2.min(n2_offset3)) as usize;
+            
+            if index_1 < 256 || index_2 < 256 {
+                let ret1 = if index_1 < 256 { Some(offset + index_1 + 4) } else { None };
+                let ret2 = if index_2 < 256 { Some(offset + index_2 + 4) } else { None };
+                return (ret1,ret2);
+            }
+        }
+        (None,None)
+    }
+
+    #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
+    unsafe fn impl1(input: &str) -> i64 {
+        let mut input = input.as_bytes();
+
+        let mut sum = 0;
+
+        while let Some(index) = scan4(input,*b"mul(") {
+            input = &input[index..];
+            if let Some(product) = parse( input ) {
+                sum += product;
+            }
+        }
+
+        sum
+    }
+
+    unsafe fn impl2(input: &str) -> i64 {
+        let mut input = input.as_bytes();
+
+        let mut sum = 0;
+
+        loop {
+            let (mul_index,dont_index) = scan4x2(input,*b"mul(",*b"don'");
+            match (mul_index,dont_index) {
+                (Some(mul_index),Some(_dont_index)) if mul_index < _dont_index => {
+                    input = &input[mul_index..];
+                    if let Some(product) = parse( input ) {
+                        sum += product;
+                    }
+                }
+                (_,Some(dont_index)) => {
+                    input = &input[dont_index..];
+                    if input.len() > 3 && input[0] == b't' && input[1] == b'(' &&  input[2] == b')' {
+                        // skip until do
+                        if let Some(index) = scan4(input,*b"do()") {
+                            input = &input[index..];
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                (Some(mul_index),None) => {
+                    input = &input[mul_index..];
+                    if let Some(product) = parse( input ) {
+                        sum += product;
+                    }
+                }
+                (None,None) => {
+                    break;
+                }
+            }
+        }
+        return sum;
     }
 }
