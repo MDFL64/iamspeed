@@ -560,10 +560,6 @@ pub mod day4 {
         fn count(self) -> i64 {
             (self.1.count_ones() + self.0.count_ones()) as i64
         }
-
-        fn print(self) {
-            println!("{:b} {:b}",self.1.reverse_bits(),self.0.reverse_bits());
-        }
     }
 
     struct Globals {
@@ -691,7 +687,66 @@ pub mod day4 {
         matches
     }
 
+    #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
     pub unsafe fn impl2(input: &str) -> i64 {
-        0
+        let bytes = input.as_bytes();
+        for i in 0..140 {
+            let byte_row = &bytes[(i*141)..];
+            GLOBAL.x_0.rows[i] = Row::new(byte_row, b'X');
+            GLOBAL.m_0.rows[i] = Row::new(byte_row, b'M');
+            GLOBAL.a_0.rows[i] = Row::new(byte_row, b'A');
+            GLOBAL.s_0.rows[i] = Row::new(byte_row, b'S');
+        }
+        let mut matches = 0;
+        // direction 1
+        for i in 0..138 {
+            let a = GLOBAL.a_0.rows[i+1].shift(1);
+
+            let m1 = GLOBAL.m_0.rows[i];
+            let m2 = GLOBAL.m_0.rows[i+2];
+
+            let s1 = GLOBAL.s_0.rows[i].shift(2);
+            let s2 = GLOBAL.s_0.rows[i+2].shift(2);
+
+            matches += a.and( m1.and(m2) ).and( s1.and(s2) ).count();
+        }
+        // direction 2
+        for i in 0..138 {
+            let a = GLOBAL.a_0.rows[i+1].shift(1);
+
+            let m1 = GLOBAL.m_0.rows[i].shift(2);
+            let m2 = GLOBAL.m_0.rows[i+2].shift(2);
+
+            let s1 = GLOBAL.s_0.rows[i];
+            let s2 = GLOBAL.s_0.rows[i+2];
+
+            matches += a.and( m1.and(m2) ).and( s1.and(s2) ).count();
+        }
+        // direction 3
+        for i in 0..138 {
+            let a = GLOBAL.a_0.rows[i+1].shift(1);
+
+            let m1 = GLOBAL.m_0.rows[i];
+            let m2 = GLOBAL.m_0.rows[i].shift(2);
+
+            let s1 = GLOBAL.s_0.rows[i+2];
+            let s2 = GLOBAL.s_0.rows[i+2].shift(2);
+
+            matches += a.and( m1.and(m2) ).and( s1.and(s2) ).count();
+        }
+        // direction 4
+        for i in 0..138 {
+            let a = GLOBAL.a_0.rows[i+1].shift(1);
+
+            let m1 = GLOBAL.m_0.rows[i+2];
+            let m2 = GLOBAL.m_0.rows[i+2].shift(2);
+
+            let s1 = GLOBAL.s_0.rows[i];
+            let s2 = GLOBAL.s_0.rows[i].shift(2);
+
+            matches += a.and( m1.and(m2) ).and( s1.and(s2) ).count();
+        }
+
+        matches
     }
 }
