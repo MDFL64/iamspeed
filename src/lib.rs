@@ -502,3 +502,196 @@ pub mod day3 {
         return sum;
     }
 }
+
+pub mod day4 {
+    // 140 = (32 + 32 + 32 + 32) + (8 + 4)
+    // 140 = (64 + 64) + (try 16)
+
+    use core::simd::prelude::*;
+
+    static mut GLOBAL: Globals = Globals{
+        x_0: Grid::empty(),
+        m_0: Grid::empty(),
+        a_0: Grid::empty(),
+        s_0: Grid::empty(),
+    };
+
+    #[derive(Copy,Clone)]
+    // (high word,low word)
+    struct Row(u16,u128);
+
+    impl Row {
+        fn new(bytes: &[u8], char: u8) -> Self {
+            assert!(bytes.len() >= 140);
+
+            let char_splat = u8x32::splat(char);
+
+            let byte_vector = u8x32::from_slice(bytes);
+            let mut low = byte_vector.simd_eq(char_splat).to_bitmask() as u128;
+
+            let byte_vector = u8x32::from_slice(&bytes[32..]);
+            low |= (byte_vector.simd_eq(char_splat).to_bitmask() as u128) << 32;
+            
+            let byte_vector = u8x32::from_slice(&bytes[64..]);
+            low |= (byte_vector.simd_eq(char_splat).to_bitmask() as u128) << 64;
+
+            let byte_vector = u8x32::from_slice(&bytes[96..]);
+            low |= (byte_vector.simd_eq(char_splat).to_bitmask() as u128) << 96;
+
+            let byte_vector = u8x8::from_slice(&bytes[128..]);
+            let mut high = byte_vector.simd_eq(u8x8::splat(char)).to_bitmask() as u16;
+
+            let byte_vector = u8x4::from_slice(&bytes[136..]);
+            high |= (byte_vector.simd_eq(u8x4::splat(char)).to_bitmask() as u16) << 8;
+
+            Row(high,low)
+        }
+
+        fn shift(self, n: u8) -> Self {
+            let Row(a,b) = self;
+            let carry = (a as u128) << (128 - n);
+            Self(a >> n,(b >> n) | carry)
+        }
+
+        fn and(self, other: Self) -> Self {
+            Self(self.0 & other.0, self.1 & other.1)
+        }
+
+        fn count(self) -> i64 {
+            (self.1.count_ones() + self.0.count_ones()) as i64
+        }
+
+        fn print(self) {
+            println!("{:b} {:b}",self.1.reverse_bits(),self.0.reverse_bits());
+        }
+    }
+
+    struct Globals {
+        x_0: Grid,
+        m_0: Grid,
+        a_0: Grid,
+        s_0: Grid
+    }
+
+    struct Grid {
+        rows: [Row;140]
+    }
+
+    impl Grid {
+        const fn empty() -> Self {
+            let zero = Row(0,0);
+            Self{
+                rows: [
+                    zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+                    zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+                    zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+                    zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+                    zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+                    zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+                    zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+                    zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+                    zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+                    zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+                    zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+                    zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+                    zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+                    zero, zero, zero, zero, zero, zero, zero, zero, zero, zero,
+                ]
+            }
+        }
+    }
+
+    pub fn part1(input: &str) -> i64 {
+        unsafe { impl1(input) }
+    }
+
+    pub fn part2(input: &str) -> i64 {
+        unsafe { impl2(input) }
+    }
+
+    #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
+    pub unsafe fn impl1(input: &str) -> i64 {
+        let bytes = input.as_bytes();
+        for i in 0..140 {
+            let byte_row = &bytes[(i*141)..];
+            GLOBAL.x_0.rows[i] = Row::new(byte_row, b'X');
+            GLOBAL.m_0.rows[i] = Row::new(byte_row, b'M');
+            GLOBAL.a_0.rows[i] = Row::new(byte_row, b'A');
+            GLOBAL.s_0.rows[i] = Row::new(byte_row, b'S');
+        }
+        let mut matches = 0;
+        // forward and back
+        for i in 0..140 {
+            let x = GLOBAL.x_0.rows[i];
+            let m = GLOBAL.m_0.rows[i].shift(1);
+            let a = GLOBAL.a_0.rows[i].shift(2);
+            let s = GLOBAL.s_0.rows[i].shift(3);
+
+            matches += ( x.and(m) ).and( a.and(s) ).count();
+        }
+        for i in 0..140 {
+            let x = GLOBAL.x_0.rows[i].shift(3);
+            let m = GLOBAL.m_0.rows[i].shift(2);
+            let a = GLOBAL.a_0.rows[i].shift(1);
+            let s = GLOBAL.s_0.rows[i];
+
+            matches += ( x.and(m) ).and( a.and(s) ).count();
+        }
+        // up and down
+        for i in 0..137 {
+            let x = GLOBAL.x_0.rows[i];
+            let m = GLOBAL.m_0.rows[i+1];
+            let a = GLOBAL.a_0.rows[i+2];
+            let s = GLOBAL.s_0.rows[i+3];
+
+            matches += ( x.and(m) ).and( a.and(s) ).count();
+        }
+        for i in 0..137 {
+            let x = GLOBAL.x_0.rows[i+3];
+            let m = GLOBAL.m_0.rows[i+2];
+            let a = GLOBAL.a_0.rows[i+1];
+            let s = GLOBAL.s_0.rows[i];
+
+            matches += ( x.and(m) ).and( a.and(s) ).count();
+        }
+        // diagonal
+        for i in 0..137 {
+            let x = GLOBAL.x_0.rows[i];
+            let m = GLOBAL.m_0.rows[i+1].shift(1);
+            let a = GLOBAL.a_0.rows[i+2].shift(2);
+            let s = GLOBAL.s_0.rows[i+3].shift(3);
+
+            matches += ( x.and(m) ).and( a.and(s) ).count();
+        }
+        for i in 0..137 {
+            let x = GLOBAL.x_0.rows[i+3];
+            let m = GLOBAL.m_0.rows[i+2].shift(1);
+            let a = GLOBAL.a_0.rows[i+1].shift(2);
+            let s = GLOBAL.s_0.rows[i].shift(3);
+
+            matches += ( x.and(m) ).and( a.and(s) ).count();
+        }
+        for i in 0..137 {
+            let x = GLOBAL.x_0.rows[i].shift(3);
+            let m = GLOBAL.m_0.rows[i+1].shift(2);
+            let a = GLOBAL.a_0.rows[i+2].shift(1);
+            let s = GLOBAL.s_0.rows[i+3];
+
+            matches += ( x.and(m) ).and( a.and(s) ).count();
+        }
+        for i in 0..137 {
+            let x = GLOBAL.x_0.rows[i+3].shift(3);
+            let m = GLOBAL.m_0.rows[i+2].shift(2);
+            let a = GLOBAL.a_0.rows[i+1].shift(1);
+            let s = GLOBAL.s_0.rows[i];
+
+            matches += ( x.and(m) ).and( a.and(s) ).count();
+        }
+
+        matches
+    }
+
+    pub unsafe fn impl2(input: &str) -> i64 {
+        0
+    }
+}
