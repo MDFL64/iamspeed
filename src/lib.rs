@@ -750,3 +750,84 @@ pub mod day4 {
         matches
     }
 }
+
+pub mod day5 {
+    use core::iter::Iterator;
+
+    pub fn part1(input: &str) -> i64 {
+        unsafe { impl1(input) }
+    }
+
+    pub fn part2(input: &str) -> i64 {
+        unsafe { impl2(input) }
+    }
+
+    // array bitfields that represent which numbers can NOT come before a given number
+    static mut RULES: [u128;100] = [0;100];
+    static mut LINE:  [u8;32] = [0;32];
+
+    unsafe fn parse_rules(mut bytes: &[u8]) -> &[u8] {
+        loop {
+            if bytes[0] == b'\n' {
+                return &bytes[1..];
+            }
+            let n1 = (bytes[0]-b'0')*10 + (bytes[1]-b'0');
+            let n2 = (bytes[3]-b'0')*10 + (bytes[4]-b'0');
+
+            RULES[n1 as usize] |= 1<<n2;
+    
+            bytes=&bytes[6..];
+        }
+    }
+
+    unsafe fn parse_line(mut bytes: &[u8]) -> (&[u8],usize) {
+        if bytes.len()==0 {
+            return (bytes,0);
+        }
+
+        let mut i = 0;
+        loop {
+            let n1 = (bytes[0]-b'0')*10 + (bytes[1]-b'0');
+            //println!("N {}",n1);
+            LINE[i] = n1;
+            i += 1;
+            if bytes[2] == b'\n' {
+                return (&bytes[3..],i);
+            }
+            bytes=&bytes[3..];
+        }
+    }
+
+    unsafe fn impl1(input: &str) -> i64 {
+        let mut bytes = parse_rules(input.as_bytes());
+        let mut count;
+
+        let mut sum = 0;
+
+        'outer:
+        loop {
+            (bytes,count) = parse_line(bytes);
+            if count == 0 {
+                break;
+            }
+
+            let mut seen_mask = 0;
+            for n in LINE.iter().copied().take(count) {
+                let rules = RULES[n as usize];
+                if rules & seen_mask != 0 {
+                    continue 'outer;
+                }
+                seen_mask |= 1<<n;
+            }
+            
+            let mid = LINE[count/2];
+            sum += mid as i64;
+        }
+
+        sum
+    }
+
+    fn impl2(input: &str) -> i64 {
+        -1
+    }
+}
