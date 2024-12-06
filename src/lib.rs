@@ -921,7 +921,50 @@ pub mod day5 {
         sum
     }
 
-    fn impl2(input: &str) -> i64 {
-        -1
+    #[inline(always)]
+    unsafe fn fix(line: &[u8]) -> i64 {
+        let mid_i = line.len()/2;
+
+        let mut full_mask = 0;
+        for n in line.iter().copied() {
+            full_mask |= 1<<n;
+        }
+        for n in line.iter().copied() {
+            let cool_mask = full_mask & RULES[n as usize];
+            let index = cool_mask.count_ones();
+            if index as usize == mid_i {
+                return n as i64;
+            }
+            full_mask |= 1<<n;
+        }
+        panic!();
+    }
+
+    #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
+    unsafe fn impl2(input: &str) -> i64 {
+        let mut bytes = parse_rules(input.as_bytes());
+        let mut line = [0;64];
+        let mut count;
+
+        let mut sum = 0;
+
+        'outer:
+        loop {
+            (bytes,count) = parse_line(bytes,&mut line);
+            if count == 0 {
+                break;
+            }
+
+            let mut seen_mask = 0;
+            for n in line.iter().copied().take(count) {
+                let rules = RULES[n as usize];
+                if rules & seen_mask != 0 {
+                    sum += fix(&line[..count]);
+                    continue 'outer;
+                }
+                seen_mask |= 1<<n;
+            }
+        }
+        sum
     }
 }
