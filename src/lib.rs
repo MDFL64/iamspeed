@@ -764,23 +764,71 @@ pub mod day5 {
 
     // array bitfields that represent which numbers can NOT come before a given number
     static mut RULES: [u128;100] = [0;100];
-    static mut LINE:  [u8;32] = [0;32];
 
+    use core::simd::prelude::*;
+    use std::arch::x86_64::_mm256_maddubs_epi16;
+
+    #[inline(always)]
+    unsafe fn write_rule(n1: u8, n2: u8) {
+        RULES[n1 as usize] |= 1<<n2;
+    }
+
+    #[inline(always)]
     unsafe fn parse_rules(mut bytes: &[u8]) -> &[u8] {
+        while bytes.len() >= 32 {
+            let vec = u8x32::from_slice(bytes);
+            // check punctuation
+            let compare = u8x32::from_array(*b"\n_|__\n\n_|__\n\n_|__\n\n_|__\n\n_|__\n??");
+            let eq = vec.simd_eq(compare).to_bitmask();
+            if eq != 0b100100100100100100100100100100 {
+                break;
+            }
+            let digits = simd_swizzle!(vec,[
+                0,1, 3,4,
+                6,7, 9,10,
+                12,13, 15,16,
+                18,19, 21,22,
+                24,25, 27,28,
+
+                0,0,0,0,0,0,0,0,0,0,0,0
+            ]) - u8x32::splat(b'0');
+
+            let places = u8x32::from_array([
+                10,1,10,1,
+                10,1,10,1,
+                10,1,10,1,
+                10,1,10,1,
+                10,1,10,1,
+
+                0,0,0,0,0,0,0,0,0,0,0,0
+            ]);
+
+            let res_vec: u16x16 = _mm256_maddubs_epi16(digits.into(),places.into()).into();
+            let res = res_vec.to_array();
+            write_rule(res[0] as u8, res[1] as u8);
+            write_rule(res[2] as u8, res[3] as u8);
+            write_rule(res[4] as u8, res[5] as u8);
+            write_rule(res[6] as u8, res[7] as u8);
+            write_rule(res[8] as u8, res[9] as u8);
+
+            bytes=&bytes[30..];
+        }
+
         loop {
             if bytes[0] == b'\n' {
                 return &bytes[1..];
             }
             let n1 = (bytes[0]-b'0')*10 + (bytes[1]-b'0');
             let n2 = (bytes[3]-b'0')*10 + (bytes[4]-b'0');
-
-            RULES[n1 as usize] |= 1<<n2;
+            write_rule(n1, n2);
     
             bytes=&bytes[6..];
         }
     }
 
-    unsafe fn parse_line(mut bytes: &[u8]) -> (&[u8],usize) {
+    #[inline(always)]
+    unsafe fn parse_line<'a>(mut bytes: &'a[u8], line: &mut [u8;32]) -> (&'a[u8],usize) {
+        //let mut line = [0;32];
         if bytes.len()==0 {
             return (bytes,0);
         }
@@ -789,7 +837,7 @@ pub mod day5 {
         loop {
             let n1 = (bytes[0]-b'0')*10 + (bytes[1]-b'0');
             //println!("N {}",n1);
-            LINE[i] = n1;
+            line[i] = n1;
             i += 1;
             if bytes[2] == b'\n' {
                 return (&bytes[3..],i);
@@ -798,21 +846,23 @@ pub mod day5 {
         }
     }
 
+    #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
     unsafe fn impl1(input: &str) -> i64 {
         let mut bytes = parse_rules(input.as_bytes());
+        let mut line = [0;32];
         let mut count;
 
         let mut sum = 0;
 
         'outer:
         loop {
-            (bytes,count) = parse_line(bytes);
+            (bytes,count) = parse_line(bytes,&mut line);
             if count == 0 {
                 break;
             }
 
             let mut seen_mask = 0;
-            for n in LINE.iter().copied().take(count) {
+            for n in line.iter().copied().take(count) {
                 let rules = RULES[n as usize];
                 if rules & seen_mask != 0 {
                     continue 'outer;
@@ -820,7 +870,7 @@ pub mod day5 {
                 seen_mask |= 1<<n;
             }
             
-            let mid = LINE[count/2];
+            let mid = line[count/2];
             sum += mid as i64;
         }
 
