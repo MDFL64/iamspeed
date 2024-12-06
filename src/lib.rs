@@ -827,16 +827,60 @@ pub mod day5 {
     }
 
     #[inline(always)]
-    unsafe fn parse_line<'a>(mut bytes: &'a[u8], line: &mut [u8;32]) -> (&'a[u8],usize) {
-        //let mut line = [0;32];
+    unsafe fn parse_line<'a>(mut bytes: &'a[u8], line: &mut [u8;64]) -> (&'a[u8],usize) {
         if bytes.len()==0 {
             return (bytes,0);
         }
 
         let mut i = 0;
+        while bytes.len() >= 32 {
+            // parse in up to 10 digit chunks
+            let vec = u8x32::from_slice(bytes);
+
+            // determine length, including ending newline
+            let newline = vec.simd_eq(u8x32::splat(b'\n')).first_set();
+
+            let places = u8x32::from_array([
+                10,1,10,1,
+                10,1,10,1,
+                10,1,10,1,
+                10,1,10,1,
+                10,1,10,1,
+
+                10,1,0,0,0,0,0,0,0,0,0,0
+            ]);
+
+            let digits1 = simd_swizzle!(vec,[
+                0,1, 3,4,
+                6,7, 9,10,
+                12,13, 15,16,
+                18,19, 21,22,
+                24,25, 27,28,
+
+                0,0,0,0,0,0,0,0,0,0,0,0
+            ]) - u8x32::splat(b'0');
+            
+            let res_vec: u16x16 = _mm256_maddubs_epi16(digits1.into(),places.into()).into();
+            let res_vec8: u8x16 = res_vec.cast();
+            let dest = &mut line[i..];
+            res_vec8.copy_to_slice(dest);
+
+            match newline {
+                None => {
+                    i += 10;
+                    bytes = &bytes[30..];
+                }
+                Some(newline) => {
+                    let advance = newline+1;
+                    i += advance/3;
+                    bytes = &bytes[advance..];
+                    return (&bytes,i);
+                }
+            };
+        }
+
         loop {
             let n1 = (bytes[0]-b'0')*10 + (bytes[1]-b'0');
-            //println!("N {}",n1);
             line[i] = n1;
             i += 1;
             if bytes[2] == b'\n' {
@@ -849,7 +893,7 @@ pub mod day5 {
     #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
     unsafe fn impl1(input: &str) -> i64 {
         let mut bytes = parse_rules(input.as_bytes());
-        let mut line = [0;32];
+        let mut line = [0;64];
         let mut count;
 
         let mut sum = 0;
