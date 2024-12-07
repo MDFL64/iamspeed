@@ -977,15 +977,18 @@ pub mod day6 {
     use ahash::AHashSet;
 
     #[derive(Debug,PartialEq,Eq,Hash,Clone,Copy)]
+    #[repr(u8)]
     enum Direction {
-        North,
-        East,
-        South,
-        West
+        North = 1,
+        East = 2,
+        South = 4,
+        West = 8
     }
 
     const SIZE: usize = 130;
     static mut GRID: [u8;17030] = [0;17030];
+    // used to detect cycles in part2
+    static mut WALKED: [u8;130*130] = [0;130*130];
 
     pub fn part1(input: &str) -> i64 {
         unsafe { impl1(input) }
@@ -1010,6 +1013,20 @@ pub mod day6 {
 
     unsafe fn set_blocked((x, y): (usize,usize), b: bool) {
         GRID[y*(SIZE+1) + x] = if b { b'#' } else { b'.' }
+    }
+
+    unsafe fn clear_walked() {
+        std::ptr::write_bytes::<u8>(WALKED.as_mut_ptr(),0,WALKED.len());
+    }
+
+    unsafe fn set_walked((x, y): (usize,usize), dir: Direction) -> bool {
+        let bit = dir as u8;
+        if WALKED[y*130 + x] & bit != 0 {
+            true
+        } else {
+            WALKED[y*130 + x] |= bit;
+            false
+        }
     }
 
     fn can_move_north((_, y): (usize,usize)) -> bool {
@@ -1123,20 +1140,19 @@ pub mod day6 {
         result
     }
 
-    //#[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
+    #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
     unsafe fn part2_check(
         (mut pos,mut dir): ((usize,usize),Direction),
-        walked: &mut AHashSet<((usize,usize),Direction)>
     ) -> bool {
-        walked.clear();
+        //walked.clear();
+        clear_walked();
         'outer:
         loop {
             // north
             while dir == Direction::North {
-                if walked.contains(&(pos,dir)) {
+                if set_walked(pos, dir) {
                     return true;
                 }
-                walked.insert((pos,dir));
 
                 if !can_move_north(pos) {
                     break 'outer;
@@ -1150,10 +1166,9 @@ pub mod day6 {
             }
             // east
             while dir == Direction::East {
-                if walked.contains(&(pos,dir)) {
+                if set_walked(pos, dir) {
                     return true;
                 }
-                walked.insert((pos,dir));
 
                 if !can_move_east(pos) {
                     break 'outer;
@@ -1167,10 +1182,9 @@ pub mod day6 {
             }
             // south
             while dir == Direction::South {
-                if walked.contains(&(pos,dir)) {
+                if set_walked(pos, dir) {
                     return true;
                 }
-                walked.insert((pos,dir));
 
                 if !can_move_south(pos) {
                     break 'outer;
@@ -1184,10 +1198,9 @@ pub mod day6 {
             }
             // west
             while dir == Direction::West {
-                if walked.contains(&(pos,dir)) {
+                if set_walked(pos, dir) {
                     return true;
                 }
-                walked.insert((pos,dir));
 
                 if !can_move_west(pos) {
                     break 'outer;
@@ -1309,7 +1322,6 @@ pub mod day6 {
         GRID.copy_from_slice(input);
         
         let mut looping_blockers = AHashSet::new();
-        let mut walked = AHashSet::new();
 
         let start_index = GRID.iter().copied().position(|x| x == b'^').unwrap();
         let start_pos = (start_index%131,start_index/131);
@@ -1320,7 +1332,7 @@ pub mod day6 {
                 if !check(block_pos) && !looping_blockers.contains(&block_pos) && start_pos != block_pos && !is_marked(block_pos) {
                     set_blocked(block_pos,true);
 
-                    let looped = part2_check(*path_point,&mut walked);
+                    let looped = part2_check(*path_point);
                     if looped {
                         looping_blockers.insert(block_pos);
                     }
