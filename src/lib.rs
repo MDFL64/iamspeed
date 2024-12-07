@@ -968,3 +968,370 @@ pub mod day5 {
         sum
     }
 }
+
+
+pub mod day6 {
+    use core::iter::Iterator;
+    use std::collections::{HashMap, HashSet};
+
+    use ahash::AHashSet;
+
+    #[derive(Debug,PartialEq,Eq,Hash,Clone,Copy)]
+    enum Direction {
+        North,
+        East,
+        South,
+        West
+    }
+
+    const SIZE: usize = 130;
+    static mut GRID: [u8;17030] = [0;17030];
+
+    pub fn part1(input: &str) -> i64 {
+        unsafe { impl1(input) }
+    }
+
+    pub fn part2(input: &str) -> i64 {
+        //crate::benchmark("too",|| unsafe { impl2(input) })
+        unsafe { impl2(input) }
+    }
+
+    unsafe fn mark((x, y): (usize,usize)) {
+        GRID[y*(SIZE+1) + x] = b'X';
+    }
+
+    unsafe fn is_marked((x, y): (usize,usize)) -> bool {
+        GRID[y*(SIZE+1) + x] == b'X'
+    }
+
+    unsafe fn check((x, y): (usize,usize)) -> bool {
+        GRID[y*(SIZE+1) + x] == b'#'
+    }
+
+    unsafe fn set_blocked((x, y): (usize,usize), b: bool) {
+        GRID[y*(SIZE+1) + x] = if b { b'#' } else { b'.' }
+    }
+
+    fn can_move_north((_, y): (usize,usize)) -> bool {
+        y > 0
+    }
+
+    fn can_move_south((_, y): (usize,usize)) -> bool {
+        y < SIZE-1
+    }
+
+    fn can_move_west((x, _): (usize,usize)) -> bool {
+        x > 0
+    }
+
+    fn can_move_east((x, _): (usize,usize)) -> bool {
+        x < SIZE-1
+    }
+
+    fn move_north((x, y): (usize,usize)) -> (usize,usize) {
+        (x,y-1)
+    }
+
+    fn move_south((x, y): (usize,usize)) -> (usize,usize) {
+        (x,y+1)
+    }
+
+    fn move_west((x, y): (usize,usize)) -> (usize,usize) {
+        (x-1,y)
+    }
+
+    fn move_east((x, y): (usize,usize)) -> (usize,usize) {
+        (x+1,y)
+    }
+
+    unsafe fn draw_map() {
+        println!();
+        println!();
+        println!("{}",std::str::from_utf8(&GRID).unwrap());
+    }
+
+    unsafe fn final_count() -> i64 {
+        let mut count = 0;
+        let line = &GRID;
+        for b in line.iter().copied() {
+            if b == b'X' {
+                count += 1;
+            }
+        }
+        count
+    }
+
+    unsafe fn part2_base(mut pos: (usize,usize)) -> Vec<((usize,usize),Direction)> {
+        let mut result = Vec::with_capacity(10000);
+
+        'outer:
+        loop {
+            // north
+            loop {
+                result.push((pos,Direction::North));
+                if !can_move_north(pos) {
+                    break 'outer;
+                }
+                let next = move_north(pos);
+                if check(next) {
+                    break;
+                } else {
+                    pos = next;
+                }
+            }
+            // east
+            loop {
+                result.push((pos,Direction::East));
+                if !can_move_east(pos) {
+                    break 'outer;
+                }
+                let next = move_east(pos);
+                if check(next) {
+                    break;
+                } else {
+                    pos = next;
+                }
+            }
+            // south
+            loop {
+                result.push((pos,Direction::South));
+                if !can_move_south(pos) {
+                    break 'outer;
+                }
+                let next = move_south(pos);
+                if check(next) {
+                    break;
+                } else {
+                    pos = next;
+                }
+            }
+            // west
+            loop {
+                result.push((pos,Direction::West));
+                if !can_move_west(pos) {
+                    break 'outer;
+                }
+                let next = move_west(pos);
+                if check(next) {
+                    break;
+                } else {
+                    pos = next;
+                }
+            }
+        }
+
+        result
+    }
+
+    //#[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
+    unsafe fn part2_check(
+        (mut pos,mut dir): ((usize,usize),Direction),
+        walked: &mut AHashSet<((usize,usize),Direction)>
+    ) -> bool {
+        walked.clear();
+        'outer:
+        loop {
+            // north
+            while dir == Direction::North {
+                if walked.contains(&(pos,dir)) {
+                    return true;
+                }
+                walked.insert((pos,dir));
+
+                if !can_move_north(pos) {
+                    break 'outer;
+                }
+                let next = move_north(pos);
+                if check(next) {
+                    dir = Direction::East;
+                } else {
+                    pos = next;
+                }
+            }
+            // east
+            while dir == Direction::East {
+                if walked.contains(&(pos,dir)) {
+                    return true;
+                }
+                walked.insert((pos,dir));
+
+                if !can_move_east(pos) {
+                    break 'outer;
+                }
+                let next = move_east(pos);
+                if check(next) {
+                    dir = Direction::South;
+                } else {
+                    pos = next;
+                }
+            }
+            // south
+            while dir == Direction::South {
+                if walked.contains(&(pos,dir)) {
+                    return true;
+                }
+                walked.insert((pos,dir));
+
+                if !can_move_south(pos) {
+                    break 'outer;
+                }
+                let next = move_south(pos);
+                if check(next) {
+                    dir = Direction::West;
+                } else {
+                    pos = next;
+                }
+            }
+            // west
+            while dir == Direction::West {
+                if walked.contains(&(pos,dir)) {
+                    return true;
+                }
+                walked.insert((pos,dir));
+
+                if !can_move_west(pos) {
+                    break 'outer;
+                }
+                let next = move_west(pos);
+                if check(next) {
+                    dir = Direction::North;
+                } else {
+                    pos = next;
+                }
+            }
+        }
+        false
+    }
+
+    fn get_blocking_pos((pos,dir): ((usize,usize),Direction)) -> Option<(usize,usize)> {
+        match dir {
+            Direction::North => {
+                if can_move_north(pos) {
+                    Some(move_north(pos))
+                } else {
+                    None
+                }
+            }
+            Direction::East => {
+                if can_move_east(pos) {
+                    Some(move_east(pos))
+                } else {
+                    None
+                }
+            }
+            Direction::South => {
+                if can_move_south(pos) {
+                    Some(move_south(pos))
+                } else {
+                    None
+                }
+            }
+            Direction::West => {
+                if can_move_west(pos) {
+                    Some(move_west(pos))
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
+    unsafe fn impl1(input: &str) -> i64 {
+        let input = input.as_bytes();
+        GRID.copy_from_slice(input);
+        
+        let start_index = GRID.iter().copied().position(|x| x == b'^').unwrap();
+        let mut pos = (start_index%131,start_index/131);
+
+        'outer:
+        loop {
+            // north
+            loop {
+                mark(pos);
+                if !can_move_north(pos) {
+                    break 'outer;
+                }
+                let next = move_north(pos);
+                if check(next) {
+                    break;
+                } else {
+                    pos = next;
+                }
+            }
+            // east
+            loop {
+                mark(pos);
+                if !can_move_east(pos) {
+                    break 'outer;
+                }
+                let next = move_east(pos);
+                if check(next) {
+                    break;
+                } else {
+                    pos = next;
+                }
+            }
+            // south
+            loop {
+                mark(pos);
+                if !can_move_south(pos) {
+                    break 'outer;
+                }
+                let next = move_south(pos);
+                if check(next) {
+                    break;
+                } else {
+                    pos = next;
+                }
+            }
+            // west
+            loop {
+                mark(pos);
+                if !can_move_west(pos) {
+                    break 'outer;
+                }
+                let next = move_west(pos);
+                if check(next) {
+                    break;
+                } else {
+                    pos = next;
+                }
+            }
+        }
+
+        final_count()
+    }
+
+    #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
+    unsafe fn impl2(input: &str) -> i64 {
+        let input = input.as_bytes();
+        GRID.copy_from_slice(input);
+        
+        let mut looping_blockers = AHashSet::new();
+        let mut walked = AHashSet::new();
+
+        let start_index = GRID.iter().copied().position(|x| x == b'^').unwrap();
+        let start_pos = (start_index%131,start_index/131);
+
+        let path = part2_base(start_pos);
+        for path_point in path.iter() {
+            if let Some(block_pos) = get_blocking_pos(*path_point) {
+                if !check(block_pos) && !looping_blockers.contains(&block_pos) && start_pos != block_pos && !is_marked(block_pos) {
+                    set_blocked(block_pos,true);
+
+                    let looped = part2_check(*path_point,&mut walked);
+                    if looped {
+                        looping_blockers.insert(block_pos);
+                    }
+
+                    set_blocked(block_pos,false);
+                }
+            }
+            // disallow blocking already walked paths
+            mark(path_point.0);
+        }
+
+        looping_blockers.len() as i64
+    }
+}
