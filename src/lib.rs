@@ -1352,6 +1352,7 @@ pub mod day6 {
 // did not participate in day 7
 
 pub mod day8 {
+    use core::u8;
     use std::collections::HashSet;
 
     use arrayvec::ArrayVec;
@@ -1423,7 +1424,7 @@ pub mod day8 {
         ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
         ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
     ];
-    static mut MAP: [bool;SIZE*SIZE] = [false;SIZE*SIZE];
+    static mut MAP: [u64;SIZE] = [0;SIZE];
 
     pub fn part1(input: &str) -> i64 {
         unsafe { impl1(input) }
@@ -1440,7 +1441,7 @@ pub mod day8 {
         if y < 0 || y as usize >= SIZE {
             return;
         }
-        MAP[y as usize * SIZE + x as usize] = true;
+        MAP[y as usize] |= 1<<x;
     }
 
     #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
@@ -1450,11 +1451,14 @@ pub mod day8 {
         for list in TABLE.iter_mut() {
             list.clear();
         }
-        for flag in MAP.iter_mut() {
-            *flag = false;
+        for row in MAP.iter_mut() {
+            *row = 0;
         }
         
         // fill table
+        let mut min = u8::MAX;
+        let mut max = u8::MIN;
+
         let input = input.as_bytes();
         for y in 0..SIZE {
             for x in 0..SIZE {
@@ -1462,12 +1466,15 @@ pub mod day8 {
                 let b = input[index];
                 if b != b'.' {
                     TABLE[b as usize].push((x as i8,y as i8));
+                    max = max.max(b);
+                    min = min.min(b);
                 }
             }
         }
 
         // mark spots
-        for list in TABLE.iter() {
+        for i in min..=max {
+            let list = &TABLE[i as usize];
             if list.len() > 0 {
                 for i in 0..list.len() {
                     for j in (i+1)..list.len() {
@@ -1484,13 +1491,10 @@ pub mod day8 {
 
         // count spots
         let mut count = 0;
-        for flag in MAP.iter() {
-            if *flag {
-                count += 1;
-            }
+        for row in MAP.iter() {
+            count += row.count_ones();
         }
-
-        count
+        count as _
     }
 
     #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
