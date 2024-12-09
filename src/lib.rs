@@ -1353,7 +1353,7 @@ pub mod day6 {
 
 pub mod day8 {
     use core::u8;
-    use std::collections::HashSet;
+    use std::simd::prelude::*;
 
     use arrayvec::ArrayVec;
 
@@ -1434,14 +1434,43 @@ pub mod day8 {
         unsafe { impl2(input) }
     }
 
-    unsafe fn mark(x: i8, y: i8) {
+    unsafe fn mark(x: i8, y: i8) -> bool {
         if x < 0 || x as usize >= SIZE {
-            return;
+            return false;
         }
         if y < 0 || y as usize >= SIZE {
-            return;
+            return false;
         }
         MAP[y as usize] |= 1<<x;
+        true
+    }
+
+    unsafe fn check_pair(pos1: (i8,i8), pos2: (i8,i8)) {
+        let dx = pos1.0 - pos2.0;
+        let dy = pos1.1 - pos2.1;
+        mark(pos1.0 + dx, pos1.1 + dy);
+        mark(pos2.0 - dx, pos2.1 - dy);
+    }
+
+    unsafe fn check_pair_2(pos1: (i8,i8), pos2: (i8,i8)) {
+        let dx = pos1.0 - pos2.0;
+        let dy = pos1.1 - pos2.1;
+        {
+            let mut ax = pos1.0;
+            let mut ay = pos1.1;
+            while mark(ax, ay) {
+                ax += dx;
+                ay += dy;
+            }
+        }
+        {
+            let mut ax = pos2.0;
+            let mut ay = pos2.1;
+            while mark(ax, ay) {
+                ax -= dx;
+                ay -= dy;
+            }
+        }
     }
 
     #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
@@ -1461,13 +1490,28 @@ pub mod day8 {
 
         let input = input.as_bytes();
         for y in 0..SIZE {
-            for x in 0..SIZE {
-                let index = (SIZE+1)*y+x;
-                let b = input[index];
-                if b != b'.' {
-                    TABLE[b as usize].push((x as i8,y as i8));
+            if y < SIZE-1 {
+                let row_index = (SIZE+1)*y;
+                let mut mask = u8x64::from_slice(&input[row_index..]).simd_ne(u8x64::splat(b'.')).to_bitmask() & 0x3_FFFF_FFFF_FFFF;
+                while mask != 0 {
+                    let index = mask.trailing_zeros() as usize;
+                    let b = input[row_index + index];
+
+                    TABLE[b as usize].push((index as i8,y as i8));
                     max = max.max(b);
                     min = min.min(b);
+
+                    mask &= !(1<<index);
+                }
+            } else {
+                for x in 0..SIZE {
+                    let index = (SIZE+1)*y+x;
+                    let b = input[index];
+                    if b != b'.' {
+                        TABLE[b as usize].push((x as i8,y as i8));
+                        max = max.max(b);
+                        min = min.min(b);
+                    }
                 }
             }
         }
@@ -1475,16 +1519,10 @@ pub mod day8 {
         // mark spots
         for i in min..=max {
             let list = &TABLE[i as usize];
-            if list.len() > 0 {
-                for i in 0..list.len() {
-                    for j in (i+1)..list.len() {
-                        let pos1 = list[i];
-                        let pos2 = list[j];
-                        let dx = pos1.0 - pos2.0;
-                        let dy = pos1.1 - pos2.1;
-                        mark(pos1.0 + dx, pos1.1 + dy);
-                        mark(pos2.0 - dx, pos2.1 - dy);
-                    }
+
+            for i in 0..list.len() {
+                for j in (i+1)..list.len() {
+                    check_pair(list[i],list[j]);
                 }
             }
         }
@@ -1499,6 +1537,65 @@ pub mod day8 {
 
     #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
     unsafe fn impl2(input: &str) -> i64 {
-        -1
+        
+        // reset table
+        for list in TABLE.iter_mut() {
+            list.clear();
+        }
+        for row in MAP.iter_mut() {
+            *row = 0;
+        }
+        
+        // fill table
+        let mut min = u8::MAX;
+        let mut max = u8::MIN;
+
+        let input = input.as_bytes();
+        for y in 0..SIZE {
+            if y < SIZE-1 {
+                let row_index = (SIZE+1)*y;
+                let mut mask = u8x64::from_slice(&input[row_index..]).simd_ne(u8x64::splat(b'.')).to_bitmask() & 0x3_FFFF_FFFF_FFFF;
+                while mask != 0 {
+                    let index = mask.trailing_zeros() as usize;
+                    let b = input[row_index + index];
+
+                    TABLE[b as usize].push((index as i8,y as i8));
+                    //mark(index as i8,y as i8);
+                    max = max.max(b);
+                    min = min.min(b);
+
+                    mask &= !(1<<index);
+                }
+            } else {
+                for x in 0..SIZE {
+                    let index = (SIZE+1)*y+x;
+                    let b = input[index];
+                    if b != b'.' {
+                        TABLE[b as usize].push((x as i8,y as i8));
+                        //mark(x as i8,y as i8);
+                        max = max.max(b);
+                        min = min.min(b);
+                    }
+                }
+            }
+        }
+
+        // mark spots
+        for i in min..=max {
+            let list = &TABLE[i as usize];
+
+            for i in 0..list.len() {
+                for j in (i+1)..list.len() {
+                    check_pair_2(list[i],list[j]);
+                }
+            }
+        }
+
+        // count spots
+        let mut count = 0;
+        for row in MAP.iter() {
+            count += row.count_ones();
+        }
+        count as _
     }
 }
