@@ -1,5 +1,6 @@
 #![feature(portable_simd)]
 #![feature(iter_array_chunks)]
+#![feature(strict_overflow_ops)]
 
 use core::ops::FnOnce;
 use std::time::Instant;
@@ -1345,5 +1346,155 @@ pub mod day6 {
         }
 
         looping_blockers.len() as i64
+    }
+}
+
+// did not participate in day 7
+
+pub mod day8 {
+    use std::collections::HashSet;
+
+    use arrayvec::ArrayVec;
+
+    const SIZE: usize = 50;
+    static mut TABLE: [ArrayVec<(i8,i8),4> ;256] = [
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+        ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),ArrayVec::new_const(),
+    ];
+    static mut MAP: [bool;SIZE*SIZE] = [false;SIZE*SIZE];
+
+    pub fn part1(input: &str) -> i64 {
+        unsafe { impl1(input) }
+    }
+
+    pub fn part2(input: &str) -> i64 {
+        unsafe { impl2(input) }
+    }
+
+    unsafe fn mark(x: i8, y: i8) {
+        if x < 0 || x as usize >= SIZE {
+            return;
+        }
+        if y < 0 || y as usize >= SIZE {
+            return;
+        }
+        MAP[y as usize * SIZE + x as usize] = true;
+    }
+
+    #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
+    unsafe fn impl1(input: &str) -> i64 {
+        
+        // reset table
+        for list in TABLE.iter_mut() {
+            list.clear();
+        }
+        for flag in MAP.iter_mut() {
+            *flag = false;
+        }
+        
+        // fill table
+        let input = input.as_bytes();
+        for y in 0..SIZE {
+            for x in 0..SIZE {
+                let index = (SIZE+1)*y+x;
+                let b = input[index];
+                if b != b'.' {
+                    TABLE[b as usize].push((x as i8,y as i8));
+                }
+            }
+        }
+
+        // mark spots
+        for list in TABLE.iter() {
+            if list.len() > 0 {
+                for i in 0..list.len() {
+                    for j in (i+1)..list.len() {
+                        let pos1 = list[i];
+                        let pos2 = list[j];
+                        let dx = pos1.0 - pos2.0;
+                        let dy = pos1.1 - pos2.1;
+                        mark(pos1.0 + dx, pos1.1 + dy);
+                        mark(pos2.0 - dx, pos2.1 - dy);
+                    }
+                }
+            }
+        }
+
+        // count spots
+        let mut count = 0;
+        for flag in MAP.iter() {
+            if *flag {
+                count += 1;
+            }
+        }
+
+        count
+    }
+
+    #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
+    unsafe fn impl2(input: &str) -> i64 {
+        -1
     }
 }
