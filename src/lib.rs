@@ -1611,82 +1611,141 @@ pub mod day9 {
         unsafe { impl2(input) }
     }
 
-    const FILE_GAP: u16 = u16::MAX;
-
-    #[derive(Default)]
-    struct Gaps {
-        gap_index: usize
+    #[derive(Debug,Clone,Copy)]
+    struct File {
+        id: u32,
+        size: u8
     }
 
-    impl Gaps {
-        fn next(&mut self, blocks: &[u16]) -> Option<usize> {
-            while self.gap_index < blocks.len() {
-                let index = self.gap_index;
-                self.gap_index += 1;
-
-                if blocks[index] == FILE_GAP {
-                    return Some(index);
-                }
-            }
-            None
-        }
+    struct Part1<'a> {
+        next_front: usize,
+        next_back: usize,
+        extra_back: File,
+        input: &'a [u8],
+        next_disk_index: usize,
+        sum: i64
     }
 
-    fn parse(input: &str) -> Vec<u16> {
-        let mut blocks = Vec::with_capacity(200_000);
-        let mut next_file = 0;
-
-        let mut iter = input.bytes().filter_map(|x| match x {
-            b'0'..=b'9' => Some(x-b'0'),
-            _ => None
-        });
-
-        loop {
-            // file
-            if let Some(file_size) = iter.next() {
-                for _ in 0..file_size {
-                    blocks.push(next_file);
-                }
-                next_file += 1;
-            } else {
-                break;
+    impl<'a> Part1<'a> {
+        fn new(input: &'a str) -> Self {
+            let input = input.as_bytes();
+            let mut next_back = input.len()-1;
+            if input[next_back] == b'\n' {
+                next_back -= 1;
             }
-            // gap
-            if let Some(file_size) = iter.next() {
-                for _ in 0..file_size {
-                    blocks.push(FILE_GAP);
-                }
-            } else {
-                break;
+            if next_back % 2 != 0 {
+                next_back -= 1;
+            }
+            Self {
+                next_front: 0,
+                next_back,
+                extra_back: File{id: 0, size: 0},
+                input,
+                next_disk_index: 0,
+                sum: 0
             }
         }
 
-        blocks
+        fn pull_from_back(&mut self, used_front_index: usize, size_to_fill: u8) -> File {
+            // use up extra
+            if self.extra_back.size > 0 {
+                return if self.extra_back.size > size_to_fill {
+                    self.extra_back.size -= size_to_fill;
+                    
+                    File{
+                        id: self.extra_back.id,
+                        size: size_to_fill
+                    }
+                } else {
+                    let size = self.extra_back.size;
+                    self.extra_back.size = 0;
+
+                    File{
+                        id: self.extra_back.id,
+                        size
+                    }
+                };
+            }
+
+            // consumed everything
+            if self.next_back <= used_front_index {
+                return File{
+                    id: 0,
+                    size: 0
+                }
+            }
+
+            let count = self.input[self.next_back] - b'0';
+            let file_id = self.next_back / 2;
+            self.next_back -= 2;
+            //assert!(count != 0);
+
+            if count <= size_to_fill {
+                return File{
+                    id: file_id as u32,
+                    size: count
+                }
+            } else {
+                // save extra
+                self.extra_back = File{
+                    id: file_id as u32,
+                    size: count - size_to_fill
+                };
+                return File{
+                    id: file_id as u32,
+                    size: size_to_fill
+                }
+            }
+        }
+
+        fn step(&mut self) -> bool {
+            if self.next_back < self.next_front {
+                // 'next' elements can be the same, but they cannot cross over
+                if self.extra_back.size > 0 {
+                    self.tally(self.extra_back);
+                }
+                return false;
+            }
+
+            let front_index = self.next_front;
+            let is_filled = front_index % 2 == 0;
+            let count = self.input[front_index] - b'0';
+            self.next_front += 1;
+
+            if is_filled {
+                let file_id = front_index / 2;
+                self.tally(File {
+                    id: file_id as u32,
+                    size: count
+                });
+            } else {
+                let mut gap_size = count;
+                while gap_size > 0 {
+                    let pulled = self.pull_from_back(front_index,gap_size);
+                    if pulled.size == 0 {
+                        return false;
+                    }
+                    gap_size -= pulled.size;
+                    self.tally(pulled);
+                }
+            }
+
+            true
+        }
+    
+        fn tally(&mut self, file: File) {
+            for _ in 0..file.size {
+                self.sum += file.id as i64 * self.next_disk_index as i64;
+                self.next_disk_index += 1;
+            }
+        }
     }
 
     #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
     unsafe fn impl1(input: &str) -> i64 {
-        let mut blocks = parse(input);
-        //println!("{}",blocks.len());
-        let mut gaps = Gaps::default();
-
-        while let Some(gap) = gaps.next(&blocks) {
-            let block_id = loop {
-                let block_id = blocks.pop().unwrap();
-                if block_id != FILE_GAP {
-                    break block_id;
-                }
-            };
-
-            blocks[gap] = block_id;
-            //println!("{:?}",blocks);
-        }
-
-        let mut sum = 0;
-        for (x,y) in blocks.iter().enumerate() {
-            sum += x as i64 * *y as i64;
-        }
-        sum
+        let mut part1 = Part1::new(input);
+        while part1.step() {}
+        part1.sum
     }
 
     #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
