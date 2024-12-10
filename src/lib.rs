@@ -1601,7 +1601,7 @@ pub mod day8 {
 }
 
 pub mod day9 {
-    use core::iter::Iterator;
+    use core::{iter::Iterator, u16, usize};
 
     pub fn part1(input: &str) -> i64 {
         unsafe { impl1(input) }
@@ -1760,43 +1760,128 @@ pub mod day9 {
     #[derive(Debug)]
     struct Gap2 {
         size: u8,
-        offset: u32
+        offset: u32,
+        next: u16
     }
 
     struct GapFinder {
         gaps: Vec<Gap2>,
-        first_valid: usize
+        chain_starts: [u16;10],
+        chain_ends: [u16;10]
     }
 
     impl GapFinder {
-        fn new(gaps: Vec<Gap2>) -> Self {
+        fn new() -> Self {
             Self {
-                gaps,
-                first_valid: 0
+                gaps: Vec::<Gap2>::with_capacity(11000),
+                chain_starts: [u16::MAX;10],
+                chain_ends: [u16::MAX;10],
+            }
+        }
+
+        fn push(&mut self, gap: Gap2) {
+            let new_index = self.gaps.len();
+            // set chain start if no chain
+            if self.chain_starts[gap.size as usize] == u16::MAX {
+                self.chain_starts[gap.size as usize] = new_index as u16;
+            }
+            // link chain end
+            if self.chain_ends[gap.size as usize] != u16::MAX {
+                let end_index = self.chain_ends[gap.size as usize] as usize;
+                self.gaps[end_index].next = new_index as u16;
+            }
+            self.chain_ends[gap.size as usize] = new_index as u16;
+
+            self.gaps.push(gap);
+        }
+
+        // only valid to call for first
+        fn remove(&mut self, index: usize) {
+            let gap = &self.gaps[index];
+            let size = gap.size;
+            let next = gap.next;
+            self.chain_starts[size as usize] = next;
+        }
+
+        fn insert(&mut self, index: usize) {
+            let gap = &self.gaps[index];
+            let insert_offset = gap.offset;
+
+            let next_index = self.chain_starts[gap.size as usize];
+            if next_index == u16::MAX {
+                // list is empty
+                self.chain_starts[gap.size as usize] = index as u16;
+                self.gaps[index].next = next_index;
+            } else {
+                let check_gap = &self.gaps[next_index as usize];
+    
+                if insert_offset < check_gap.offset {
+                    // insert first
+                    self.chain_starts[gap.size as usize] = index as u16;
+                    self.gaps[index].next = next_index;
+                } else {
+                    let mut current_index = next_index;
+                    loop {
+                        let next_index = self.gaps[current_index as usize].next;
+                        if next_index == u16::MAX {
+                            // end of list
+                            self.gaps[current_index as usize].next = index as u16;
+                            self.gaps[index].next = next_index;
+                            break;
+                        } else {
+                            let check_gap = &self.gaps[next_index as usize];
+                            if insert_offset < check_gap.offset {
+                                // insert
+                                self.gaps[current_index as usize].next = index as u16;
+                                self.gaps[index].next = next_index;
+                                break;
+                            }
+                        }
+                        current_index = next_index;
+                    }
+                }
             }
         }
 
         fn next_gap(&mut self, size: u8, max_offset: u32) -> Option<u32> {
-            //println!("find gap");
-            for i in self.first_valid..self.gaps.len() {
-                self.first_valid = i;
-                if self.gaps[i].size != 0 {
-                    break;
+
+            // find gap
+            let mut first_index = usize::MAX;
+            for check_size in size..10 {
+                let index = self.chain_starts[check_size as usize] as usize;
+                if index != u16::MAX as usize {
+                    first_index = first_index.min(index);
                 }
             }
-            for gap in self.gaps[self.first_valid..].iter_mut() {
-                //println!("? {:?}",gap);
+
+            // bail if none found
+            if first_index == usize::MAX {
+                return None;
+            }
+
+            // bail if offset is too high
+            {
+                let gap = &self.gaps[first_index];
                 if gap.offset > max_offset {
-                    break;
-                }
-                if gap.size >= size {
-                    let result = gap.offset;
-                    gap.size -= size;
-                    gap.offset += size as u32;
-                    return Some(result);
+                    return None;
                 }
             }
-            None
+
+            // remove from current chain
+            self.remove(first_index);
+
+            // get result
+            {
+                let gap = &mut self.gaps[first_index];
+                let result = gap.offset;
+                gap.size -= size;
+                gap.offset += size as u32;
+                // re-insert
+                if gap.size > 0 {
+                    self.insert(first_index);
+                }
+                Some(result)
+            }
         }
     }
 
@@ -1814,7 +1899,7 @@ pub mod day9 {
     unsafe fn impl2(input: &str) -> i64 {
         let mut input = input.bytes();
         let mut files = Vec::<File2>::with_capacity(11000);
-        let mut gaps = Vec::<Gap2>::with_capacity(11000);
+        let mut gaps = GapFinder::new();
         // parse
         {
             let mut next_id = 0;
@@ -1841,7 +1926,8 @@ pub mod day9 {
                     if size > 0 {
                         gaps.push(Gap2{
                             size,
-                            offset: next_offset
+                            offset: next_offset,
+                            next: u16::MAX
                         });
                     }
                     next_offset += size as u32;
@@ -1850,9 +1936,7 @@ pub mod day9 {
         }
         // process
         {
-            //println!("!!!");
             let mut sum = 0;
-            let mut gaps = GapFinder::new(gaps);
             for file_i in (0..files.len()).rev() {
                 let file = &mut files[file_i];
                 if let Some(new_offset) = gaps.next_gap(file.size, file.offset) {
