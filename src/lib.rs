@@ -1599,3 +1599,98 @@ pub mod day8 {
         count as _
     }
 }
+
+pub mod day9 {
+    use core::iter::Iterator;
+
+    pub fn part1(input: &str) -> i64 {
+        unsafe { impl1(input) }
+    }
+
+    pub fn part2(input: &str) -> i64 {
+        unsafe { impl2(input) }
+    }
+
+    const FILE_GAP: u16 = u16::MAX;
+
+    #[derive(Default)]
+    struct Gaps {
+        gap_index: usize
+    }
+
+    impl Gaps {
+        fn next(&mut self, blocks: &[u16]) -> Option<usize> {
+            while self.gap_index < blocks.len() {
+                let index = self.gap_index;
+                self.gap_index += 1;
+
+                if blocks[index] == FILE_GAP {
+                    return Some(index);
+                }
+            }
+            None
+        }
+    }
+
+    fn parse(input: &str) -> Vec<u16> {
+        let mut blocks = Vec::with_capacity(200_000);
+        let mut next_file = 0;
+
+        let mut iter = input.bytes().filter_map(|x| match x {
+            b'0'..=b'9' => Some(x-b'0'),
+            _ => None
+        });
+
+        loop {
+            // file
+            if let Some(file_size) = iter.next() {
+                for _ in 0..file_size {
+                    blocks.push(next_file);
+                }
+                next_file += 1;
+            } else {
+                break;
+            }
+            // gap
+            if let Some(file_size) = iter.next() {
+                for _ in 0..file_size {
+                    blocks.push(FILE_GAP);
+                }
+            } else {
+                break;
+            }
+        }
+
+        blocks
+    }
+
+    #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
+    unsafe fn impl1(input: &str) -> i64 {
+        let mut blocks = parse(input);
+        //println!("{}",blocks.len());
+        let mut gaps = Gaps::default();
+
+        while let Some(gap) = gaps.next(&blocks) {
+            let block_id = loop {
+                let block_id = blocks.pop().unwrap();
+                if block_id != FILE_GAP {
+                    break block_id;
+                }
+            };
+
+            blocks[gap] = block_id;
+            //println!("{:?}",blocks);
+        }
+
+        let mut sum = 0;
+        for (x,y) in blocks.iter().enumerate() {
+            sum += x as i64 * *y as i64;
+        }
+        sum
+    }
+
+    #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
+    unsafe fn impl2(input: &str) -> i64 {
+        -1
+    }
+}
