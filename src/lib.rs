@@ -1748,15 +1748,13 @@ pub mod day9 {
         part1.sum
     }
 
-    //#[repr(packed)]
     #[derive(Debug)]
     struct File2 {
-        id: u32,
+        id: u16,
         size: u8,
         offset: u32
     }
 
-    //#[repr(packed)]
     #[derive(Debug)]
     struct Gap2 {
         size: u8,
