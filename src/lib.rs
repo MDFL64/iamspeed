@@ -1748,8 +1748,119 @@ pub mod day9 {
         part1.sum
     }
 
+    //#[repr(packed)]
+    #[derive(Debug)]
+    struct File2 {
+        id: u32,
+        size: u8,
+        offset: u32
+    }
+
+    //#[repr(packed)]
+    #[derive(Debug)]
+    struct Gap2 {
+        size: u8,
+        offset: u32
+    }
+
+    struct GapFinder {
+        gaps: Vec<Gap2>,
+        first_valid: usize
+    }
+
+    impl GapFinder {
+        fn new(gaps: Vec<Gap2>) -> Self {
+            Self {
+                gaps,
+                first_valid: 0
+            }
+        }
+
+        fn next_gap(&mut self, size: u8, max_offset: u32) -> Option<u32> {
+            //println!("find gap");
+            for i in self.first_valid..self.gaps.len() {
+                self.first_valid = i;
+                if self.gaps[i].size != 0 {
+                    break;
+                }
+            }
+            for gap in self.gaps[self.first_valid..].iter_mut() {
+                //println!("? {:?}",gap);
+                if gap.offset > max_offset {
+                    break;
+                }
+                if gap.size >= size {
+                    let result = gap.offset;
+                    gap.size -= size;
+                    gap.offset += size as u32;
+                    return Some(result);
+                }
+            }
+            None
+        }
+    }
+
+    fn tally2(file: &File2) -> i64 {
+        let mut sum = 0;
+        let mut disk_index = file.offset;
+        for _ in 0..file.size {
+            sum += file.id as i64 * disk_index as i64;
+            disk_index += 1;
+        }
+        sum
+    }
+
     #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
     unsafe fn impl2(input: &str) -> i64 {
-        -1
+        let mut input = input.bytes();
+        let mut files = Vec::<File2>::with_capacity(11000);
+        let mut gaps = Vec::<Gap2>::with_capacity(11000);
+        // parse
+        {
+            let mut next_id = 0;
+            let mut next_offset = 0;
+            loop {
+                // file
+                {
+                    let Some(b) = input.next() else { break };
+                    if b == b'\n' { break };
+                    let size = b - b'0';
+                    files.push(File2{
+                        id: next_id,
+                        size,
+                        offset: next_offset
+                    });
+                    next_id += 1;
+                    next_offset += size as u32;
+                }
+                // gap
+                {
+                    let Some(b) = input.next() else { break };
+                    if b == b'\n' { break };
+                    let size = b - b'0';
+                    if size > 0 {
+                        gaps.push(Gap2{
+                            size,
+                            offset: next_offset
+                        });
+                    }
+                    next_offset += size as u32;
+                }
+            }
+        }
+        // process
+        {
+            //println!("!!!");
+            let mut sum = 0;
+            let mut gaps = GapFinder::new(gaps);
+            for file_i in (0..files.len()).rev() {
+                let file = &mut files[file_i];
+                if let Some(new_offset) = gaps.next_gap(file.size, file.offset) {
+                    file.offset = new_offset;
+                }
+                sum += tally2(file);
+            }
+            sum
+        }
     }
 }
