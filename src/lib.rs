@@ -1998,9 +1998,8 @@ pub mod day10 {
                     "mov rax, {y}",
                     "mul {n46}",
                     "add rax, {x}",
-                    "add rax, {input}",
                     // check for char
-                    "cmp byte ptr [rax], {b:l}",
+                    "cmp byte ptr [{input}+rax], {b:l}",
                     "jne 4f",
                     "call 2b",
                     "4:",
@@ -2015,9 +2014,8 @@ pub mod day10 {
                     "mov rax, {y}",
                     "mul {n46}",
                     "add rax, {x}",
-                    "add rax, {input}",
                     // check for char
-                    "cmp byte ptr [rax], {b:l}",
+                    "cmp byte ptr [{input}+rax], {b:l}",
                     "jne 4f",
                     "call 2b",
                     "4:",
@@ -2032,9 +2030,8 @@ pub mod day10 {
                     "mov rax, {y}",
                     "mul {n46}",
                     "add rax, {x}",
-                    "add rax, {input}",
                     // check for char
-                    "cmp byte ptr [rax], {b:l}",
+                    "cmp byte ptr [{input}+rax], {b:l}",
                     "jne 4f",
                     "call 2b",
                     "4:",
@@ -2049,9 +2046,8 @@ pub mod day10 {
                     "mov rax, {y}",
                     "mul {n46}",
                     "add rax, {x}",
-                    "add rax, {input}",
                     // check for char
-                    "cmp byte ptr [rax], {b:l}",
+                    "cmp byte ptr [{input}+rax], {b:l}",
                     "jne 4f",
                     "call 2b",
                     "4:",
