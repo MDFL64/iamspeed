@@ -1948,6 +1948,8 @@ pub mod day9 {
 }
 
 pub mod day10 {
+    use core::ptr;
+
     const SIZE: usize = 45;
 
     pub fn part1(input: &str) -> i64 {
@@ -1955,8 +1957,7 @@ pub mod day10 {
     }
 
     pub fn part2(input: &str) -> i64 {
-        //unsafe { impl2(input) }
-        -1
+        unsafe { impl2_turbocursed(input) }
     }
     
     static mut MAP: [u16;SIZE*SIZE] = [0;SIZE*SIZE];
@@ -1970,21 +1971,15 @@ pub mod day10 {
             use std::arch::asm;
             let mut sum: i64 = 0;
             let mut b = b as i16;
+            let mut input_index = input.as_ptr() as usize + y * (SIZE+1) + x;
+            let mut map_index = MAP.as_ptr() as usize + (y * SIZE + x) * 2;
+
             asm!(
                 "call 2f",
                 "jmp 1002f",
 
                 "2:",
-                // early return check
-                // calculate index
-                "mov rax, {y}",
-                "mul {n45}",
-                "add rax, {x}",
-                "cmp word ptr [{map}+rax*2], {tag:x}",
-                "jne 77f",
-                "ret",
-                "77:",
-                "mov word ptr [{map}+rax*2], {tag:x}",
+                "mov word ptr [{map_index}], {tag:x}",
                 // 9 check
                 "cmp {b:x},0x39",
                 "je 102f",
@@ -1993,65 +1988,77 @@ pub mod day10 {
                 // x+
                 "cmp {x},44",
                 "jge 3f",
-                    "inc {x}",
-                    // grab from input
-                    "mov rax, {y}",
-                    "mul {n46}",
-                    "add rax, {x}",
+                    "inc {input_index}",
                     // check for char
-                    "cmp byte ptr [{input}+rax], {b:l}",
+                    "cmp byte ptr [{input_index}], {b:l}",
                     "jne 4f",
-                    "call 2b",
+                        "add {map_index}, 2",
+                        "cmp word ptr [{map_index}], {tag:x}",
+                        "je 5f",
+                            "inc {x}",
+                            "call 2b",
+                            "dec {x}",
+                        "5:",
+                        "sub {map_index}, 2",
                     "4:",
-                    "dec {x}",
+                    "dec {input_index}",
                 "3:",
 
                 // x-
                 "cmp {x},0",
                 "je 3f",
-                    "dec {x}",
-                    // grab from input
-                    "mov rax, {y}",
-                    "mul {n46}",
-                    "add rax, {x}",
+                    "dec {input_index}",
                     // check for char
-                    "cmp byte ptr [{input}+rax], {b:l}",
+                    "cmp byte ptr [{input_index}], {b:l}",
                     "jne 4f",
-                    "call 2b",
+                        "sub {map_index}, 2",
+                        "cmp word ptr [{map_index}], {tag:x}",
+                        "je 5f",
+                            "dec {x}",
+                            "call 2b",
+                            "inc {x}",
+                        "5:",
+                        "add {map_index}, 2",
                     "4:",
-                    "inc {x}",
+                    "inc {input_index}",
                 "3:",
 
                 // y+
                 "cmp {y},44",
                 "jge 3f",
-                    "inc {y}",
-                    // grab from input
-                    "mov rax, {y}",
-                    "mul {n46}",
-                    "add rax, {x}",
+                    "add {input_index}, 46",
                     // check for char
-                    "cmp byte ptr [{input}+rax], {b:l}",
+                    "cmp byte ptr [{input_index}], {b:l}",
                     "jne 4f",
-                    "call 2b",
+                        "add {map_index}, 90",
+                        "cmp word ptr [{map_index}], {tag:x}",
+                        "je 5f",
+                            "inc {y}",
+                            "call 2b",
+                            "dec {y}",
+                        "5:",
+                        "sub {map_index}, 90",
                     "4:",
-                    "dec {y}",
+                    "sub {input_index}, 46",
                 "3:",
 
                 // y-
                 "cmp {y},0",
                 "je 3f",
-                    "dec {y}",
-                    // grab from input
-                    "mov rax, {y}",
-                    "mul {n46}",
-                    "add rax, {x}",
+                    "sub {input_index}, 46",
                     // check for char
-                    "cmp byte ptr [{input}+rax], {b:l}",
+                    "cmp byte ptr [{input_index}], {b:l}",
                     "jne 4f",
-                    "call 2b",
+                        "sub {map_index}, 90",
+                        "cmp word ptr [{map_index}], {tag:x}",
+                        "je 5f",
+                            "dec {y}",
+                            "call 2b",
+                            "inc {y}",
+                        "5:",
+                        "add {map_index}, 90",
                     "4:",
-                    "inc {y}",
+                    "add {input_index}, 46",
                 "3:",
 
                 "dec {b}",
@@ -2064,20 +2071,15 @@ pub mod day10 {
 
                 "1002:",
                 // constants, unchanged when recursing
-                input = in(reg) input.as_ptr() as usize,
-                n46 = in(reg) 46,
-                n45 = in(reg) 45,
-                map = in(reg) MAP.as_ptr() as usize,
                 tag = in(reg) tag,
                 // values (must be pushed or adjusted back to previous value)
+                input_index = inout(reg) input_index,
+                map_index = inout(reg) map_index,
                 b = inout(reg) b,
                 x = inout(reg) x,
                 y = inout(reg) y,
                 // return value
                 sum = inout(reg) sum,
-                // temporary (clobbered by mul)
-                out("rax") _,
-                out("rdx") _,
             );
 
             sum
@@ -2098,4 +2100,118 @@ pub mod day10 {
         sum
     }
 
+    unsafe fn impl2_turbocursed(input: &str) -> i64 {
+        let input = input.as_bytes();
+
+        //MAP.fill(0);
+
+        unsafe fn count(input: &[u8], b: u8, (mut x,mut y): (usize,usize)) -> i64 {
+            use std::arch::asm;
+            let mut sum: i64 = 0;
+            let mut b = b as i16;
+            let mut input_index = input.as_ptr() as usize + y * (SIZE+1) + x;
+            //let mut map_index = MAP.as_ptr() as usize + (y * SIZE + x) * 2;
+
+            asm!(
+                "call 2f",
+                "jmp 1002f",
+
+                "2:",
+                // 9 check
+                "cmp {b:x},0x39",
+                "je 102f",
+                "inc {b}",
+
+                // x+
+                "cmp {x},44",
+                "jge 3f",
+                    "inc {input_index}",
+                    // check for char
+                    "cmp byte ptr [{input_index}], {b:l}",
+                    "jne 4f",
+                        "inc {x}",
+                        "call 2b",
+                        "dec {x}",
+                    "4:",
+                    "dec {input_index}",
+                "3:",
+
+                // x-
+                "cmp {x},0",
+                "je 3f",
+                    "dec {input_index}",
+                    // check for char
+                    "cmp byte ptr [{input_index}], {b:l}",
+                    "jne 4f",
+                        "dec {x}",
+                        "call 2b",
+                        "inc {x}",
+                    "4:",
+                    "inc {input_index}",
+                "3:",
+
+                // y+
+                "cmp {y},44",
+                "jge 3f",
+                    "add {input_index}, 46",
+                    // check for char
+                    "cmp byte ptr [{input_index}], {b:l}",
+                    "jne 4f",
+                        "inc {y}",
+                        "call 2b",
+                        "dec {y}",
+                    "4:",
+                    "sub {input_index}, 46",
+                "3:",
+
+                // y-
+                "cmp {y},0",
+                "je 3f",
+                    "sub {input_index}, 46",
+                    // check for char
+                    "cmp byte ptr [{input_index}], {b:l}",
+                    "jne 4f",
+                        "dec {y}",
+                        "call 2b",
+                        "inc {y}",
+                    "4:",
+                    "add {input_index}, 46",
+                "3:",
+
+                "dec {b}",
+                "ret",
+
+                // handle 9
+                "102:",
+                    "inc {sum}",
+                    "ret",
+
+                "1002:",
+                // constants, unchanged when recursing
+                //tag = in(reg) tag,
+                // values (must be pushed or adjusted back to previous value)
+                input_index = inout(reg) input_index,
+                //map_index = inout(reg) map_index,
+                b = inout(reg) b,
+                x = inout(reg) x,
+                y = inout(reg) y,
+                // return value
+                sum = inout(reg) sum,
+            );
+
+            sum
+        }
+
+        let mut sum = 0;
+        for y in 0..SIZE {
+            for x in 0..SIZE {
+                let byte_index = y*(SIZE+1)+x;
+                if input[byte_index] == b'0' {
+                    let c = count(input,b'0',(x,y));
+                    sum += c;
+                }
+            }
+        }
+        sum
+    }
 }
