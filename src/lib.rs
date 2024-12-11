@@ -1946,3 +1946,160 @@ pub mod day9 {
         }
     }
 }
+
+pub mod day10 {
+    const SIZE: usize = 45;
+
+    pub fn part1(input: &str) -> i64 {
+        unsafe { impl1_turbocursed(input) }
+    }
+
+    pub fn part2(input: &str) -> i64 {
+        //unsafe { impl2(input) }
+        -1
+    }
+    
+    static mut MAP: [u16;SIZE*SIZE] = [0;SIZE*SIZE];
+
+    unsafe fn impl1_turbocursed(input: &str) -> i64 {
+        let input = input.as_bytes();
+
+        MAP.fill(0);
+
+        unsafe fn count(input: &[u8], b: u8, (mut x,mut y): (usize,usize), tag: u16) -> i64 {
+            use std::arch::asm;
+            let mut sum: i64 = 0;
+            let mut b = b as i16;
+            asm!(
+                "call 2f",
+                "jmp 1002f",
+
+                "2:",
+                // early return check
+                // calculate index
+                "mov rax, {y}",
+                "mul {n45}",
+                "add rax, {x}",
+                "cmp word ptr [{map}+rax*2], {tag:x}",
+                "jne 77f",
+                "ret",
+                "77:",
+                "mov word ptr [{map}+rax*2], {tag:x}",
+                // 9 check
+                "cmp {b:x},0x39",
+                "je 102f",
+                "inc {b}",
+
+                // x+
+                "cmp {x},44",
+                "jge 3f",
+                    "inc {x}",
+                    // grab from input
+                    "mov rax, {y}",
+                    "mul {n46}",
+                    "add rax, {x}",
+                    "add rax, {input}",
+                    // check for char
+                    "cmp byte ptr [rax], {b:l}",
+                    "jne 4f",
+                    "call 2b",
+                    "4:",
+                    "dec {x}",
+                "3:",
+
+                // x-
+                "cmp {x},0",
+                "je 3f",
+                    "dec {x}",
+                    // grab from input
+                    "mov rax, {y}",
+                    "mul {n46}",
+                    "add rax, {x}",
+                    "add rax, {input}",
+                    // check for char
+                    "cmp byte ptr [rax], {b:l}",
+                    "jne 4f",
+                    "call 2b",
+                    "4:",
+                    "inc {x}",
+                "3:",
+
+                // y+
+                "cmp {y},44",
+                "jge 3f",
+                    "inc {y}",
+                    // grab from input
+                    "mov rax, {y}",
+                    "mul {n46}",
+                    "add rax, {x}",
+                    "add rax, {input}",
+                    // check for char
+                    "cmp byte ptr [rax], {b:l}",
+                    "jne 4f",
+                    "call 2b",
+                    "4:",
+                    "dec {y}",
+                "3:",
+
+                // y-
+                "cmp {y},0",
+                "je 3f",
+                    "dec {y}",
+                    // grab from input
+                    "mov rax, {y}",
+                    "mul {n46}",
+                    "add rax, {x}",
+                    "add rax, {input}",
+                    // check for char
+                    "cmp byte ptr [rax], {b:l}",
+                    "jne 4f",
+                    "call 2b",
+                    "4:",
+                    "inc {y}",
+                "3:",
+
+                "dec {b}",
+                "ret",
+
+                // handle 9
+                "102:",
+                    "inc {sum}",
+                    "ret",
+
+                "1002:",
+                // constants, unchanged when recursing
+                input = in(reg) input.as_ptr() as usize,
+                n46 = in(reg) 46,
+                n45 = in(reg) 45,
+                map = in(reg) MAP.as_ptr() as usize,
+                tag = in(reg) tag,
+                // values (must be pushed or adjusted back to previous value)
+                b = inout(reg) b,
+                x = inout(reg) x,
+                y = inout(reg) y,
+                // return value
+                sum = inout(reg) sum,
+                // temporary (clobbered by mul)
+                out("rax") _,
+                out("rdx") _,
+            );
+
+            sum
+        }
+
+        let mut next_tag = 1;
+        let mut sum = 0;
+        for y in 0..SIZE {
+            for x in 0..SIZE {
+                let byte_index = y*(SIZE+1)+x;
+                if input[byte_index] == b'0' {
+                    let c = count(input,b'0',(x,y),next_tag);
+                    sum += c;
+                    next_tag += 1;
+                }
+            }
+        }
+        sum
+    }
+
+}
