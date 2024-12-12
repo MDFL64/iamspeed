@@ -2215,3 +2215,58 @@ pub mod day10 {
         sum
     }
 }
+
+pub mod day11 {
+    static LUT: &[i64;76_000] = unsafe { &std::mem::transmute( *include_bytes!("day11_lut.bin") ) };
+
+    pub fn part1(input: &str) -> i64 {
+        unsafe { impl_rec(input, 25) }
+    }
+
+    pub fn part2(input: &str) -> i64 {
+        unsafe { impl_rec(input, 75) }
+    }
+
+    #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
+    unsafe fn impl_rec(input: &str, count: i32) -> i64 {
+        let input = input.as_bytes();
+        let mut n = 0;
+        let mut sum = 0;
+        for c in input.iter().copied() {
+            match c {
+                b'0'..=b'9' => {
+                    n *= 10;
+                    n += (c-b'0') as i64;
+                }
+                _ => {
+                    sum += solve(n,count);
+                    n = 0;
+                }
+            }
+        }
+        sum
+    }
+    
+    #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
+    unsafe fn solve(value: i64, n: i32) -> i64 {
+        if n==0 {
+            return 1;
+        } else if value < 1000 {
+            let index = value as usize + n as usize * 1000;
+            LUT[index]
+        } else {
+            // trying to get the log of 0 is impossible due to previous checks
+            let digits = value.ilog10() + 1;
+            
+            if digits%2 == 0 {
+                let divisor = 10i64.pow(digits/2);
+
+                let a = value / divisor;
+                let b = value % divisor;
+                solve(a,n-1) + solve(b,n-1)
+            } else {
+                solve(value * 2024,n-1)
+            }
+        }
+    }
+}
