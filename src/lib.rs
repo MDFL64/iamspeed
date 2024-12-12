@@ -2217,6 +2217,8 @@ pub mod day10 {
 }
 
 pub mod day11 {
+    use arrayvec::ArrayVec;
+
     static LUT: &[i64;76_000] = unsafe { &std::mem::transmute( *include_bytes!("day11_lut.bin") ) };
 
     pub fn part1(input: &str) -> i64 {
@@ -2246,7 +2248,7 @@ pub mod day11 {
         }
         sum
     }
-    
+
     #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
     unsafe fn solve(value: i64, n: i32) -> i64 {
         if n==0 {
@@ -2268,5 +2270,68 @@ pub mod day11 {
                 solve(value * 2024,n-1)
             }
         }
+    }
+
+    static mut ARRAY1: ArrayVec<i64,10000> = ArrayVec::new_const();
+    static mut ARRAY2: ArrayVec<i64,10000> = ArrayVec::new_const();
+
+    #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
+    unsafe fn impl_flat(input: &str, count: i32) -> i64 {
+        let input = input.as_bytes();
+        let mut n = 0;
+        ARRAY1.clear();
+        for c in input.iter().copied() {
+            match c {
+                b'0'..=b'9' => {
+                    n *= 10;
+                    n += (c-b'0') as i64;
+                }
+                _ => {
+                    ARRAY1.push(n);
+                    n = 0;
+                }
+            }
+        }
+        solve_flat(count)
+    }
+
+    #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
+    unsafe fn solve_flat(mut n: i32) -> i64 {
+        let mut input = &mut ARRAY1;
+        let mut output = &mut ARRAY2;
+
+        let mut sum = 0;
+        while input.len() > 0 {
+            //println!("handle {} {:?} {}",n,input,sum);
+            output.clear();
+            for value in input.iter().copied() {
+                if n==0 {
+                    sum += 1;
+                } else if value < 1000 {
+                    let index = value as usize + n as usize * 1000;
+                    sum += LUT[index];
+                } else {
+                    // trying to get the log of 0 is impossible due to previous checks
+                    let digits = value.ilog10() + 1;
+                    
+                    if digits%2 == 0 {
+                        let divisor = 10i64.pow(digits/2);
+        
+                        let a = value / divisor;
+                        let b = value % divisor;
+                        output.push(a);
+                        output.push(b);
+                        //solve(a,n-1) + solve(b,n-1)
+                    } else {
+                        //solve(value * 2024,n-1)
+                        output.push(value * 2024);
+                    }
+                }
+            }
+            std::mem::swap(&mut input,&mut output);
+            n -= 1;
+        }
+
+        sum
     }
 }
