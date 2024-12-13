@@ -2335,3 +2335,314 @@ pub mod day11 {
         sum
     }
 }
+
+pub mod day12 {
+    use core::{iter::Iterator, u16, usize};
+    use std::simd::prelude::*;
+
+    use arrayvec::ArrayVec;
+
+    pub fn part1(input: &str) -> i64 {
+        unsafe { impl1(input) }
+    }
+
+    pub fn part2(input: &str) -> i64 {
+        unsafe { impl2(input) }
+    }
+
+    static mut LINE_A: ArrayVec<CharSpan,500> = ArrayVec::new_const();
+    static mut LINE_B: ArrayVec<CharSpan,500> = ArrayVec::new_const();
+    static mut PREV_LINE: &mut ArrayVec<CharSpan,500> = unsafe { &mut LINE_A };
+    static mut NEXT_LINE: &mut ArrayVec<CharSpan,500> = unsafe { &mut LINE_B };
+    static mut PREV_LINE_INDEX: usize = 0;
+
+    static mut REGIONS: ArrayVec<Region,60_000> = ArrayVec::new_const();
+
+    #[derive(Debug, Clone, Copy)]
+    struct CharSpan {
+        char: u8,
+        start: u16,
+        end: u16,
+        region: u16
+    }
+
+    impl CharSpan {
+        pub fn len(&self) -> u16 {
+            self.end - self.start
+        }
+
+        pub fn overlap(&self, other: &Self) -> u16 {
+            let start = self.start.max(other.start);
+            let end = self.end.min(other.end);
+            assert!(end > start);
+            end - start
+        }
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    struct Region {
+        area: u16,
+        perimeter: u16,
+        merged_to: u16
+    }
+
+    #[derive(Debug)]
+    enum ScanResult {
+        Span(CharSpan),
+        NewLine,
+        End
+    }
+
+    struct LineScanner<'a> {
+        bytes: &'a [u8],
+        index: usize,
+        line_start: usize
+    }
+
+    // runs down a chain of regions to find the correct id
+    unsafe fn get_region(mut id: u16) -> u16 {
+        while REGIONS[id as usize].merged_to != u16::MAX {
+            id = REGIONS[id as usize].merged_to;
+        }
+        id
+    }
+
+    impl<'a> LineScanner<'a> {
+        fn new(input: &'a str) -> Self {
+            Self {
+                bytes: input.as_bytes(),
+                index: 0,
+                line_start: 0
+            }
+        }
+
+        fn next(&mut self) -> ScanResult {
+            if let Some(b) = self.bytes.get(self.index) {
+                let start_index = self.index;
+                self.index += 1;
+                if *b == b'\n' {
+                    self.line_start = self.index;
+                    ScanResult::NewLine
+                } else {
+                    {
+                        const SIMD_WIDTH: usize = 32;
+                        loop {
+                            let rest = &self.bytes[self.index..];
+                            if rest.len() < SIMD_WIDTH {
+                                break;
+                            }
+                            let vec = u8x32::from_slice(rest);
+                            let count = vec.simd_eq(u8x32::splat(*b)).to_bitmask().trailing_ones() as usize;
+                            self.index += count;
+                            if count != SIMD_WIDTH {
+                                break;
+                            }
+                        }
+                    }
+
+                    while let Some(b2) = self.bytes.get(self.index) {
+                        if b2 != b {
+                            break;
+                        }
+                        self.index += 1;
+                    }
+                    ScanResult::Span(CharSpan{
+                        char: *b,
+                        start: (start_index - self.line_start) as u16,
+                        end: (self.index - self.line_start) as u16,
+                        region: u16::MAX
+                    })
+                }
+            } else {
+                ScanResult::End
+            }
+        }
+    }
+
+    struct PrevLineMatcher {
+        char: u8,
+        start: u16,
+        end: u16,
+        done: bool
+    }
+
+    impl PrevLineMatcher {
+        fn new(span: &CharSpan) -> Self {
+            Self {
+                char: span.char,
+                start: span.start,
+                end: span.end,
+                done: false
+            }
+        }
+    }
+
+    impl Iterator for PrevLineMatcher {
+        type Item = CharSpan;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            unsafe {
+                if self.done {
+                    return None;
+                }
+                while PREV_LINE_INDEX < PREV_LINE.len() {
+                    let candidate = PREV_LINE[PREV_LINE_INDEX];
+                    if self.char == candidate.char && candidate.start < self.end && self.start < candidate.end {
+                        // overlap
+
+                        // we may want to re-use the candidate for another scan, mark done if so
+                        if self.end < candidate.end {
+                            self.done = true;
+                        } else {
+                            PREV_LINE_INDEX += 1;
+                        }
+                        
+                        return Some(candidate);
+                    }
+                    if self.end < candidate.end {
+                        break;
+                    }
+                    if candidate.end <= self.start {
+                        break;
+                    }
+                    PREV_LINE_INDEX += 1;
+                }
+            }
+            None
+        }
+    }
+
+    unsafe fn impl1(input: &str) -> i64 {
+        PREV_LINE.clear();
+        NEXT_LINE.clear();
+        REGIONS.clear();
+
+        let mut scanner = LineScanner::new(input);
+        loop {
+            let item = scanner.next();
+            match item {
+                ScanResult::Span(mut span) => {
+                    let mut overlaps = 0;
+                    
+                    for prev_span in PrevLineMatcher::new(&span) {
+                        let prev_region_id = get_region(prev_span.region);
+                        if span.region == u16::MAX {
+                            // no clash, just update
+                            span.region = prev_region_id;
+                        } else if prev_region_id != span.region {
+                            let region = &mut REGIONS[span.region as usize];
+                            let prev_region = &mut REGIONS[prev_region_id as usize];
+
+                            prev_region.merged_to = span.region;
+                            region.area += prev_region.area;
+                            region.perimeter += prev_region.perimeter;
+                        }
+
+                        overlaps += span.overlap(&prev_span);
+                    }
+                    if span.region == u16::MAX {
+                        // new region, no previous regions involved
+                        let region_id = REGIONS.len() as u16;
+                        span.region = region_id;
+                        let span_len = span.len();
+                        REGIONS.push(Region{
+                            area: span_len,
+                            perimeter: span_len * 2 + 2,
+                            merged_to: u16::MAX
+                        });
+                    } else {
+                        // update region
+                        let region = &mut REGIONS[span.region as usize];
+                        let span_len = span.len();
+                        region.area += span_len;
+                        region.perimeter += span_len * 2 + 2 - overlaps * 2;
+                    }
+
+                    NEXT_LINE.push(span);
+                }
+                ScanResult::NewLine => {
+                    // do a flip!
+                    std::mem::swap(&mut LINE_A, &mut LINE_B);
+                    PREV_LINE_INDEX = 0;
+                    NEXT_LINE.clear();
+                }
+                ScanResult::End => break
+            }
+        }
+        let mut sum = 0;
+        for r in REGIONS.iter() {
+            //println!("region = {:?}",r);
+            if r.merged_to == u16::MAX {
+                sum += r.area as i64 * r.perimeter as i64;
+            }
+        }
+        sum
+    }
+
+    unsafe fn impl2(input: &str) -> i64 {
+        PREV_LINE.clear();
+        NEXT_LINE.clear();
+        REGIONS.clear();
+
+        let mut scanner = LineScanner::new(input);
+        loop {
+            let item = scanner.next();
+            match item {
+                ScanResult::Span(mut span) => {
+                    let mut overlaps = 0;
+                    
+                    for prev_span in PrevLineMatcher::new(&span) {
+                        let prev_region_id = get_region(prev_span.region);
+                        if span.region == u16::MAX {
+                            // no clash, just update
+                            span.region = prev_region_id;
+                        } else if prev_region_id != span.region {
+                            let region = &mut REGIONS[span.region as usize];
+                            let prev_region = &mut REGIONS[prev_region_id as usize];
+
+                            prev_region.merged_to = span.region;
+                            region.area += prev_region.area;
+                            region.perimeter += prev_region.perimeter;
+                        }
+
+                        overlaps += span.overlap(&prev_span);
+                    }
+                    if span.region == u16::MAX {
+                        // new region, no previous regions involved
+                        let region_id = REGIONS.len() as u16;
+                        span.region = region_id;
+                        let span_len = span.len();
+                        REGIONS.push(Region{
+                            area: span_len,
+                            perimeter: span_len * 2 + 2,
+                            merged_to: u16::MAX
+                        });
+                    } else {
+                        // update region
+                        let region = &mut REGIONS[span.region as usize];
+                        let span_len = span.len();
+                        region.area += span_len;
+                        region.perimeter += span_len * 2 + 2 - overlaps * 2;
+                    }
+
+                    NEXT_LINE.push(span);
+                }
+                ScanResult::NewLine => {
+                    // do a flip!
+                    std::mem::swap(&mut LINE_A, &mut LINE_B);
+                    PREV_LINE_INDEX = 0;
+                    NEXT_LINE.clear();
+                }
+                ScanResult::End => break
+            }
+        }
+        let mut sum = 0;
+        for r in REGIONS.iter() {
+            //println!("region = {:?}",r);
+            if r.merged_to == u16::MAX {
+                sum += r.area as i64 * r.perimeter as i64;
+            }
+        }
+        sum
+    }
+}
