@@ -2589,7 +2589,8 @@ pub mod day12 {
             let item = scanner.next();
             match item {
                 ScanResult::Span(mut span) => {
-                    let mut overlaps = 0;
+                    let mut start_eq = false;
+                    let mut end_eq = false;
                     
                     for prev_span in PrevLineMatcher::new(&span) {
                         let prev_region_id = get_region(prev_span.region);
@@ -2605,7 +2606,12 @@ pub mod day12 {
                             region.perimeter += prev_region.perimeter;
                         }
 
-                        overlaps += span.overlap(&prev_span);
+                        if span.start == prev_span.start {
+                            start_eq = true;
+                        }
+                        if span.end == prev_span.end {
+                            end_eq = true;
+                        }
                     }
                     if span.region == u16::MAX {
                         // new region, no previous regions involved
@@ -2614,7 +2620,7 @@ pub mod day12 {
                         let span_len = span.len();
                         REGIONS.push(Region{
                             area: span_len,
-                            perimeter: span_len * 2 + 2,
+                            perimeter: 4,
                             merged_to: u16::MAX
                         });
                     } else {
@@ -2622,7 +2628,12 @@ pub mod day12 {
                         let region = &mut REGIONS[span.region as usize];
                         let span_len = span.len();
                         region.area += span_len;
-                        region.perimeter += span_len * 2 + 2 - overlaps * 2;
+                        if !start_eq {
+                            region.perimeter += 2;
+                        }
+                        if !end_eq {
+                            region.perimeter += 2;
+                        }
                     }
 
                     NEXT_LINE.push(span);
