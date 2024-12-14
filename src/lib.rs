@@ -2674,6 +2674,7 @@ pub mod day13 {
         let mut index = 0;
 
         const X: u8 = 255;
+        const XX: u32 = 255;
         // 3,3
         PARSE_LUT[0b1100000001] =u8x16::from_array([
             X,X,0,1,2,X,X,X,
@@ -2724,26 +2725,28 @@ pub mod day13 {
 
         let mut sum = 0;
         // doesn't actually need 64 bytes but I don't want to test my luck
-        while input.len() - index > 64 {
-            index += 12;
-            let mut res1: u16x16;
-            let mut res2: u32x4;
-            let mut lut_index: u32;
+        {
             unsafe {
                 let c_0 = u8x32::splat(b'0');
                 let c_comma = u8x16::splat(b',');
                 let c_newline = u8x16::splat(b'\n');
                 const Z: u8 = 0;
                 let shuf1 = u8x32::from_array([
-                    0,1,6,7,X,X,X,X,
+                    0,1,X,X,6,7,X,X,
                     X,X,X,X,X,X,X,X,
-                    21,22,27,28,X,X,X,X,
+                    21,22,X,X,27,28,X,X,
                     X,X,X,X,X,X,X,X,
                 ]);
+                let shuf2 = u32x8::from_array([
+                    0,4,2,4,0,2,XX,XX,
+                ]);
+                let shuf3 = u32x8::from_array([
+                    5,1,5,3,3,1,XX,XX,
+                ]);
                 let mul1 = u8x32::from_array([
-                    10,1,10,1,Z,Z,Z,Z,
+                    10,1,Z,Z,10,1,Z,Z,
                     Z,Z,Z,Z,Z,Z,Z,Z,
-                    10,1,10,1,Z,Z,Z,Z,
+                    10,1,Z,Z,10,1,Z,Z,
                     Z,Z,Z,Z,Z,Z,Z,Z,
                 ]);
                 let mul2 = u8x16::from_array([
@@ -2755,13 +2758,15 @@ pub mod day13 {
                     1000,10,1,0,
                 ]);
                 asm!(
+                    "3:",
+                    "add {index}, 12",
                     // parse phase 1
-                    "vmovups {vec1}, [{input}]",
+                    "vmovups {vec1}, [{input}+{index}]",
                     "vpsubb {vec1}, {vec1}, {c_0}",
                     "vpshufb {vec1}, {vec1}, {shuf1}",
                     "vpmaddubsw {vec1}, {vec1}, {mul1}",
                     // parse phase 2
-                    "vmovups {vec2}, [{input}+39]",
+                    "vmovups {vec2}, [{input}+{index}+39]",
                     "vpcmpeqb {tmp1:x}, {vec2}, {c_comma}",
                     "vpmovmskb {lut_index}, {tmp1:x}",
                     "vpcmpeqb {tmp1:x}, {vec2}, {c_newline}",
@@ -2770,51 +2775,71 @@ pub mod day13 {
                     "vpsubb {vec2}, {vec2}, {c_0:x}",
                     "vmovaps {tmp1:x}, [{lut}+{lut_index}*2]",
                     "vpshufb {vec2}, {vec2}, {tmp1:x}",
+                    // update index
+                    "add {index}, 71",
+                    "lzcnt {lut_index:e}, {lut_index:e}",
+                    "sub {index}, {lut_index}",
                     // yucky
                     "vpmaddubsw {vec2}, {vec2}, {mul2}",
                     "vpmaddwd {vec2}, {vec2}, {mul3}",
                     "phaddd {vec2}, {vec2}",
+                    // calculate determinants
+                    "vblendps {tmp1}, {vec1}, {vec2:y}, 12",
+                    "vpermd {vec1}, {shuf2}, {tmp1}",
+                    "vpermd {vec2:y}, {shuf3}, {tmp1}",
+                    "vpmulld {vec1}, {vec1}, {vec2:y}",
+                    "vpxor {tmp1}, {tmp1}, {tmp1}",
+                    "vphsubd {vec1}, {vec1}, {tmp1}",
+                    // calculate final
+                    "vpextrd {tmp2:e}, {vec1:x}, 0",  // ds
+                    "vpextrd eax, {vec1:x}, 1",       // da
+                    "cdq",
+                    "idiv {tmp2:e}",
+                    "test edx, edx",
+                    "jnz 2f",
+                    "mov {final1:e}, 3",
+                    "mul {final1:e}",
+                    "movsxd {final1}, eax",
 
-                    input = in(reg) input.as_ptr().add(index),
+                    "vextractf128 {tmp1:x},{vec1},1",
+                    "vpextrd eax, {tmp1:x}, 0",       // db
+                    "cdq",
+                    "idiv {tmp2:e}",
+                    "test edx, edx",
+                    "jnz 2f",
+                    "movsxd {final2}, eax",
+
+                    "add {sum}, {final1}",
+                    "add {sum}, {final2}",
+
+                    "2:",
+                    "cmp {index}, {max_len}",
+                    "jl 3b",
+
+                    input = in(reg) input.as_ptr(),
+                    index = inout(reg) index,
                     lut = in(reg) PARSE_LUT.as_ptr(),
-                    vec1 = out(ymm_reg) res1,
-                    vec2 = out(xmm_reg) res2,
+                    vec1 = out(ymm_reg) _,
+                    vec2 = out(xmm_reg) _,
                     tmp1 = out(ymm_reg) _,
                     tmp2 = out(reg) _,
-                    lut_index = out(reg) lut_index,
+                    final1 = out(reg) _,
+                    final2 = out(reg) _,
+                    lut_index = out(reg) _,
+                    sum = inout(reg) sum,
                     c_0 = in(ymm_reg) c_0,
                     c_comma = in(xmm_reg) c_comma,
                     c_newline = in(xmm_reg) c_newline,
                     shuf1 = in(ymm_reg) shuf1,
+                    shuf2 = in(ymm_reg) shuf2,
+                    shuf3 = in(ymm_reg) shuf3,
                     mul1 = in(ymm_reg) mul1,
                     mul2 = in(xmm_reg) mul2,
                     mul3 = in(xmm_reg) mul3,
+                    max_len = in(reg) input.len() - 64,
+                    out("rax") _,
+                    out("rdx") _,
                 );
-            }
-
-            let res1 = res1.to_array();
-            
-            let sx = res2[0] as i32;
-            let sy = res2[1] as i32;
-            
-            let ax = res1[0] as i32;
-            let ay = res1[1] as i32;
-            
-            let bx = res1[8] as i32;
-            let by = res1[9] as i32;
-
-            index += (71 - lut_index.leading_zeros()) as usize;
-
-            let ds = ax*by-bx*ay;
-            let da = sx*by-bx*sy;
-            let db = ax*sy-sx*ay;
-            
-            if da % ds != 0 || db % ds != 0 {
-                // skip
-            } else {
-                let a = (da / ds) as i64;
-                let b = (db / ds) as i64;
-                sum += a*3 + b;
             }
         }
 
