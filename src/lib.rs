@@ -2910,7 +2910,207 @@ pub mod day13 {
         sum
     }
 
+    #[target_feature(enable = "avx2,bmi1,bmi2,cmpxchg16b,lzcnt,movbe,popcnt")]
+    unsafe fn part2_fast(input: &[u8]) -> (usize,i64) {
+        let mut index = 0;
+        const X: u8 = 255;
+        // 3,3
+        PARSE_LUT[0b1100000001] =u8x16::from_array([
+            X,X,0,1,2,X,X,X,
+            X,X,7,8,9,X,X,X
+        ]);
+        // 3,4
+        PARSE_LUT[0b1100000001] =u8x16::from_array([
+            X,X,0,1,2,X,X,X,
+            X,7,8,9,10,X,X,X
+        ]);
+        // 3,5
+        PARSE_LUT[0b11000000001] =u8x16::from_array([
+            X,X,0,1,2,X,X,X,
+            7,8,9,10,11,X,X,X
+        ]);
+        
+        // 4,3
+        PARSE_LUT[0b1100000010] = u8x16::from_array([
+            X,0,1,2,3,X,X,X,
+            X,X,8,9,10,X,X,X
+        ]);
+        // 4,4
+        PARSE_LUT[0b11000000010] = u8x16::from_array([
+            X,0,1,2,3,X,X,X,
+            X,8,9,10,11,X,X,X
+        ]);
+        // 4,5
+        PARSE_LUT[0b110000000010] = u8x16::from_array([
+            X,0,1,2,3,X,X,X,
+            8,9,10,11,12,X,X,X
+        ]);
+        // 5,3
+        PARSE_LUT[0b11000000100] = u8x16::from_array([
+            0,1,2,3,4,X,X,X,
+            X,X,9,10,11,X,X,X
+        ]);
+        // 5,4
+        PARSE_LUT[0b110000000100] = u8x16::from_array([
+            0,1,2,3,4,X,X,X,
+            X,9,10,11,12,X,X,X
+        ]);
+        // 5,5
+        PARSE_LUT[0b1100000000100] = u8x16::from_array([
+            0,1,2,3,4,X,X,X,
+            9,10,11,12,13,X,X,X
+        ]);
+        let mut sum = 0;
+        // doesn't actually need 64 bytes but I don't want to test my luck
+        while input.len() - index > 64 {
+            index += 12;
+            let mut res1: u16x16;
+            let mut res2: u32x4;
+            let mut lut_index: u32;
+            unsafe {
+                let c_0 = u8x32::splat(b'0');
+                let c_comma = u8x16::splat(b',');
+                let c_newline = u8x16::splat(b'\n');
+                const Z: u8 = 0;
+                let shuf1 = u8x32::from_array([
+                    0,1,6,7,X,X,X,X,
+                    X,X,X,X,X,X,X,X,
+                    21,22,27,28,X,X,X,X,
+                    X,X,X,X,X,X,X,X,
+                ]);
+                let mul1 = u8x32::from_array([
+                    10,1,10,1,Z,Z,Z,Z,
+                    Z,Z,Z,Z,Z,Z,Z,Z,
+                    10,1,10,1,Z,Z,Z,Z,
+                    Z,Z,Z,Z,Z,Z,Z,Z,
+                ]);
+                let mul2 = u8x16::from_array([
+                    10,1,10,1,1,Z,Z,Z,
+                    10,1,10,1,1,Z,Z,Z,
+                ]);
+                let mul3 = u16x8::from_array([
+                    1000,10,1,0,
+                    1000,10,1,0,
+                ]);
+                asm!(
+                    // parse phase 1
+                    "vmovups {vec1}, [{input}]",
+                    "vpsubb {vec1}, {vec1}, {c_0}",
+                    "vpshufb {vec1}, {vec1}, {shuf1}",
+                    "vpmaddubsw {vec1}, {vec1}, {mul1}",
+                    // parse phase 2
+                    "vmovups {vec2}, [{input}+39]",
+                    "vpcmpeqb {tmp1:x}, {vec2}, {c_comma}",
+                    "vpmovmskb {lut_index}, {tmp1:x}",
+                    "vpcmpeqb {tmp1:x}, {vec2}, {c_newline}",
+                    "vpmovmskb {tmp2}, {tmp1:x}",
+                    "or {lut_index}, {tmp2}",
+                    "vpsubb {vec2}, {vec2}, {c_0:x}",
+                    "vmovaps {tmp1:x}, [{lut}+{lut_index}*2]",
+                    "vpshufb {vec2}, {vec2}, {tmp1:x}",
+                    // yucky
+                    "vpmaddubsw {vec2}, {vec2}, {mul2}",
+                    "vpmaddwd {vec2}, {vec2}, {mul3}",
+                    "phaddd {vec2}, {vec2}",
+                    input = in(reg) input.as_ptr().add(index),
+                    lut = in(reg) PARSE_LUT.as_ptr(),
+                    vec1 = out(ymm_reg) res1,
+                    vec2 = out(xmm_reg) res2,
+                    tmp1 = out(ymm_reg) _,
+                    tmp2 = out(reg) _,
+                    lut_index = out(reg) lut_index,
+                    c_0 = in(ymm_reg) c_0,
+                    c_comma = in(xmm_reg) c_comma,
+                    c_newline = in(xmm_reg) c_newline,
+                    shuf1 = in(ymm_reg) shuf1,
+                    mul1 = in(ymm_reg) mul1,
+                    mul2 = in(xmm_reg) mul2,
+                    mul3 = in(xmm_reg) mul3,
+                );
+            }
+            let res1 = res1.to_array();
+            
+            let sx = res2[0] as i64 + 10000000000000;
+            let sy = res2[1] as i64 + 10000000000000;
+            
+            let ax = res1[0] as i64;
+            let ay = res1[1] as i64;
+            
+            let bx = res1[8] as i64;
+            let by = res1[9] as i64;
+            index += (71 - lut_index.leading_zeros()) as usize;
+            let ds = ax*by-bx*ay;
+            let da = sx*by-bx*sy;
+            let db = ax*sy-sx*ay;
+            
+            if da % ds != 0 || db % ds != 0 {
+                // skip
+            } else {
+                let a = (da / ds) as i64;
+                let b = (db / ds) as i64;
+                sum += a*3 + b;
+            }
+        }
+        (index,sum)
+    }
     pub fn part2(input: &str) -> i64 {
-        -1
+        let mut sum;
+        let mut index;
+        let input = input.as_bytes();
+        (index,sum) = unsafe { part2_fast(input) };
+        while index < input.len() {
+            // parse phase 1
+            let chunk = &input[index+12..];
+            let ax = ((chunk[0]-b'0')*10 + (chunk[1]-b'0')) as i64;
+            let ay = ((chunk[6]-b'0')*10 + (chunk[7]-b'0')) as i64;
+            let bx = ((chunk[21]-b'0')*10 + (chunk[22]-b'0')) as i64;
+            let by = ((chunk[27]-b'0')*10 + (chunk[28]-b'0')) as i64;
+            // parse phase 2
+            index += 51;
+            let mut sx = 0;
+            let mut sy = 0;
+            loop {
+                let d = input[index];
+                index += 1;
+                if d < b'0' || d > b'9' {
+                    break;
+                }
+                sx *= 10;
+                sx += (d-b'0') as i64;
+            }
+            loop {
+                let d = input[index];
+                if d >= b'0' && d <= b'9' {
+                    break;
+                }
+                index += 1;
+            }
+            loop {
+                let d = input[index];
+                index += 1;
+                if d < b'0' || d > b'9' {
+                    break;
+                }
+                sy *= 10;
+                sy += (d-b'0') as i64;
+            }
+            // skip extra newline
+            index += 1;
+            sx += 10000000000000;
+            sy += 10000000000000;
+
+            let ds = ax*by-bx*ay;
+            let da = sx*by-bx*sy;
+            let db = ax*sy-sx*ay;
+            
+            if da % ds != 0 || db % ds != 0 {
+                // skip
+            } else {
+                let a = (da / ds) as i64;
+                let b = (db / ds) as i64;
+                sum += a*3 + b;
+            }
+        }
+        sum
     }
 }
