@@ -3141,6 +3141,20 @@ pub mod day22 {
         x
     }
 
+    static LUT: &[u32;16777216] = unsafe { &std::mem::transmute( *include_bytes!("day22_lut.bin") ) };
+    fn generate_lut() {
+        let mut lut = vec!(0;16777216);
+        for i in 0..16777216 {
+            if i % 100_000 == 0 {
+                println!("{}",i);
+            }
+            lut[i as usize] = do2k(i);
+        }
+        let bytes: &[u8] = unsafe { std::slice::from_raw_parts(lut.as_ptr() as _,lut.len() * 4) };
+        std::fs::write("day22_lut.bin", bytes).unwrap();
+        panic!("done");
+    }
+
     static mut MAP: [u16;19*19*19*19] = [0;19*19*19*19];
     static mut SET: [u64;2037] = [0;2037];
     fn set_contains(index: i32) -> bool {
@@ -3162,9 +3176,7 @@ pub mod day22 {
     fn do2k_part2(mut x: u32) -> u32 {
         let mut last_digit = (x%10) as i32;
         unsafe {
-            for x in SET.iter_mut() {
-                *x = 0;
-            }
+            SET.fill(0);
         }
         let mut hash = 0;
         for i in 0..2000 {
@@ -3186,6 +3198,7 @@ pub mod day22 {
     }
 
     pub fn part1(input: &str) -> i64 {
+        //generate_lut();
         let mut index = 0;
         let input = input.as_bytes();
         let mut n = 0;
@@ -3194,7 +3207,7 @@ pub mod day22 {
             let digit = input[index];
             index += 1;
             if digit == b'\n' {
-                sum += do2k(n) as i64;
+                sum += LUT[n as usize] as i64;
                 n = 0;
             } else {
                 n = 10*n + (digit-b'0') as u32;
@@ -3208,9 +3221,7 @@ pub mod day22 {
         let input = input.as_bytes();
         let mut n = 0;
         unsafe {
-            for x in MAP.iter_mut() {
-                *x = 0;
-            }
+            MAP.fill(0);
         }
 
         while index < input.len() {
@@ -3223,14 +3234,7 @@ pub mod day22 {
                 n = 10*n + (digit-b'0') as u32;
             }
         }
-        let mut max = 0;
-        unsafe {
-            for v in MAP.iter().copied() {
-                if v > max {
-                    max = v;
-                }
-            }
-        }
-        max as i64
+        let max = unsafe { MAP.iter().copied().max() };
+        max.unwrap() as i64
     }
 }
