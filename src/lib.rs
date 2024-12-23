@@ -3120,10 +3120,6 @@ pub mod day13 {
 pub mod day17;
 
 pub mod day22 {
-    use std::collections::{HashMap, HashSet};
-
-    use ahash::{AHashMap, AHashSet};
-
     fn prune_mix(a: u32,b: u32) -> u32 {
         (a^b)&16777215
     }
@@ -3145,22 +3141,44 @@ pub mod day22 {
         x
     }
 
-    fn do2k_part2(mut x: u32, map: &mut AHashMap<(i32,i32,i32,i32),i64>) -> u32 {
-        let mut deltas = Vec::new();
+    static mut MAP: [u16;19*19*19*19] = [0;19*19*19*19];
+    static mut SET: [u64;2037] = [0;2037];
+    fn set_contains(index: i32) -> bool {
+        let cell = index / 64;
+        let bit = index % 64;
+        unsafe {
+            SET[cell as usize] & (1 << bit) != 0
+        }
+    }
+
+    fn set_insert(index: i32) {
+        let cell = index / 64;
+        let bit = index % 64;
+        unsafe {
+            SET[cell as usize] |= (1 << bit);
+        }
+    }
+
+    fn do2k_part2(mut x: u32) -> u32 {
         let mut last_digit = (x%10) as i32;
-        let mut seen = AHashSet::new();
-        for _ in 0..2000 {
+        unsafe {
+            for x in SET.iter_mut() {
+                *x = 0;
+            }
+        }
+        let mut hash = 0;
+        for i in 0..2000 {
             x = do_round(x);
             let digit = (x%10) as i32;
             let d = digit - last_digit;
             last_digit = digit;
-            deltas.push(d);
-            if deltas.len() >= 4 {
-                let len = deltas.len();
-                let history = (deltas[len-4],deltas[len-3],deltas[len-2],deltas[len-1]);
-                if !seen.contains(&history) {
-                    seen.insert(history);
-                    *map.entry(history).or_default() += digit as i64;
+            hash = (hash * 19 + d+9) % (19*19*19*19);
+            if i >= 3 {
+                if !set_contains(hash) {
+                    set_insert(hash);
+                    unsafe {
+                        MAP[hash as usize] += digit as u16;
+                    }
                 }
             }
         }
@@ -3189,24 +3207,30 @@ pub mod day22 {
         let mut index = 0;
         let input = input.as_bytes();
         let mut n = 0;
-        let mut map = AHashMap::<(i32,i32,i32,i32),i64>::new();
+        unsafe {
+            for x in MAP.iter_mut() {
+                *x = 0;
+            }
+        }
 
         while index < input.len() {
             let digit = input[index];
             index += 1;
             if digit == b'\n' {
-                do2k_part2(n,&mut map);
+                do2k_part2(n);
                 n = 0;
             } else {
                 n = 10*n + (digit-b'0') as u32;
             }
         }
         let mut max = 0;
-        for (_,v) in map {
-            if v > max {
-                max = v;
+        unsafe {
+            for v in MAP.iter().copied() {
+                if v > max {
+                    max = v;
+                }
             }
         }
-        max
+        max as i64
     }
 }
