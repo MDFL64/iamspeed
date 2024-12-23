@@ -2,14 +2,15 @@ use core::str::Bytes;
 
 use arrayvec::ArrayVec;
 use dynasmrt::{dynasm, x64::{Assembler,Rq,}, AssemblyOffset, DynamicLabel, DynasmApi, DynasmLabelApi};
+use rand::prelude::*;
 
-fn read_int(bytes: &mut Bytes) -> i32 {
+fn read_int(bytes: &mut Bytes) -> i64 {
     let mut n = 0;
     while let Some(c) = bytes.next() {
         match c {
             b'0'..=b'9' => {
                 n *= 10;
-                n += (c-b'0') as i32;
+                n += (c-b'0') as i64;
             }
             b'\n' => break,
             _ => (),
@@ -56,6 +57,8 @@ fn load_combo(ops: &mut Assembler, destination: Rq, combo: u8) {
     }
 }
 
+static mut FINAL_OUT: [u8;1024] = [0;1024];
+
 pub fn part1(input: &str) -> &str {
     let mut input = input.bytes();
     let a = read_int(&mut input);
@@ -65,22 +68,16 @@ pub fn part1(input: &str) -> &str {
     // skip newline
     input.next();
 
-    println!();
-    println!("{} {} {}",a,b,c);
-
     let mut output = [0u8;64];
 
     let mut ops = Assembler::new().unwrap();
     let start = ops.offset();
     dynasm!(ops
         ; .arch x64
-        ; push rbx // b
-        ; push rdx // c
-        ; push rcx // scratch
-        ; push rdi // output
-        ; mov rax, a
-        ; mov rbx, b
-        ; mov rdx, c
+        ; push rbx
+        ; mov rax, rsi
+        ; mov rbx, 0
+        ; mov rdx, 0
     );
 
     let mut offsets = ArrayVec::<DynamicLabel,64>::new();
@@ -95,6 +92,7 @@ pub fn part1(input: &str) -> &str {
         );
         match instr {
             0 => {
+                // divide a
                 load_combo(&mut ops, Rq::RCX, arg);
                 dynasm!(ops
                     ; .arch x64
@@ -102,6 +100,7 @@ pub fn part1(input: &str) -> &str {
                 );
             }
             1 => {
+                // b = b ^ combo
                 dynasm!(ops
                     ; .arch x64
                     ; xor rbx, arg as i32
@@ -142,6 +141,7 @@ pub fn part1(input: &str) -> &str {
                 )
             }
             6 => {
+                // divide b
                 load_combo(&mut ops, Rq::RCX, arg);
                 dynasm!(ops
                     ; .arch x64
@@ -150,6 +150,7 @@ pub fn part1(input: &str) -> &str {
                 );
             }
             7 => {
+                // divide c
                 load_combo(&mut ops, Rq::RCX, arg);
                 dynasm!(ops
                     ; .arch x64
@@ -164,26 +165,25 @@ pub fn part1(input: &str) -> &str {
     dynasm!(ops
         ; .arch x64
         ; mov rax, rdi
-        ; pop rdi // output
-        ; pop rcx // scratch
-        ; pop rdx // c
-        ; pop rbx // b
+        ; pop rbx
         ; ret
     );
 
     let code = ops.finalize().unwrap();
 
-    let func: extern "C" fn(usize,usize,usize,usize) -> usize = unsafe { std::mem::transmute(code.ptr(start)) };
+    let func: extern "C" fn(&mut [u8;64],i64) -> usize = unsafe { std::mem::transmute(code.ptr(start)) };
     let out_addr = output.as_ptr() as usize;
-    let final_addr = func(out_addr,out_addr,out_addr,out_addr);
+    let final_addr = func(&mut output,a);
 
     let count = final_addr - out_addr;
-    //println!("{} {} {}",out_addr,final_addr,final_addr - out_addr);
-    println!("-> {:?}",&output[..count]);
 
-    "wew"
-}
-
-pub fn part2(input: &str) -> &str {
-    "wew"
+    unsafe {
+        for index in 0..count {
+            if index > 0 {
+                FINAL_OUT[index*2-1] = b',';
+            }
+            FINAL_OUT[index*2] = output[index]+b'0';
+        }
+        std::str::from_utf8(&FINAL_OUT[..count*2-1]).unwrap()
+    }
 }

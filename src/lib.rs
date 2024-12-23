@@ -3118,3 +3118,95 @@ pub mod day13 {
 // 14-16 skipped
 
 pub mod day17;
+
+pub mod day22 {
+    use std::collections::{HashMap, HashSet};
+
+    use ahash::{AHashMap, AHashSet};
+
+    fn prune_mix(a: u32,b: u32) -> u32 {
+        (a^b)&16777215
+    }
+    
+    fn do_round(x: u32) -> u32 {
+        // phase 1
+        let x = prune_mix(x,x<<6);
+        // phase 2
+        let x = prune_mix(x,x>>5);
+        // phase 3
+        let x = prune_mix(x,x<<11);
+        x
+    }
+
+    fn do2k(mut x: u32) -> u32 {
+        for _ in 0..2000 {
+            x = do_round(x);
+        }
+        x
+    }
+
+    fn do2k_part2(mut x: u32, map: &mut AHashMap<(i32,i32,i32,i32),i64>) -> u32 {
+        let mut deltas = Vec::new();
+        let mut last_digit = (x%10) as i32;
+        let mut seen = AHashSet::new();
+        for _ in 0..2000 {
+            x = do_round(x);
+            let digit = (x%10) as i32;
+            let d = digit - last_digit;
+            last_digit = digit;
+            deltas.push(d);
+            if deltas.len() >= 4 {
+                let len = deltas.len();
+                let history = (deltas[len-4],deltas[len-3],deltas[len-2],deltas[len-1]);
+                if !seen.contains(&history) {
+                    seen.insert(history);
+                    *map.entry(history).or_default() += digit as i64;
+                }
+            }
+        }
+        x
+    }
+
+    pub fn part1(input: &str) -> i64 {
+        let mut index = 0;
+        let input = input.as_bytes();
+        let mut n = 0;
+        let mut sum = 0;
+        while index < input.len() {
+            let digit = input[index];
+            index += 1;
+            if digit == b'\n' {
+                sum += do2k(n) as i64;
+                n = 0;
+            } else {
+                n = 10*n + (digit-b'0') as u32;
+            }
+        }
+        sum
+    }
+
+    pub fn part2(input: &str) -> i64 {
+        let mut index = 0;
+        let input = input.as_bytes();
+        let mut n = 0;
+        let mut map = AHashMap::<(i32,i32,i32,i32),i64>::new();
+
+        while index < input.len() {
+            let digit = input[index];
+            index += 1;
+            if digit == b'\n' {
+                do2k_part2(n,&mut map);
+                n = 0;
+            } else {
+                n = 10*n + (digit-b'0') as u32;
+            }
+        }
+        let mut max = 0;
+        for (_,v) in map {
+            if v > max {
+                max = v;
+            }
+        }
+        max
+    }
+}
